@@ -1,6 +1,6 @@
 {
   "name": "fomo-tradingbot",
-  "version": "1.0.2",
+  "version": "1.1.0",
   "private": true,
   "description": "Copy-trade Fomo traders on Solana. Desktop app + 24/7 server.",
   "license": "MIT",
@@ -9,13 +9,14 @@
     "start": "electron .",
     "server": "node server/index.js",
     "build:server": "node scripts/build-server.js",
-    "build:desktop": "electron-builder --win portable --publish never",
+    "build:desktop": "electron-builder --win nsis --publish never",
     "build": "npm run build:server && npm run build:desktop",
     "test": "node scripts/selftest.js"
   },
   "dependencies": {
     "@solana/web3.js": "^1.99.0",
     "bs58": "^6.0.0",
+    "electron-updater": "^6.8.9",
     "ws": "^8.22.0"
   },
   "devDependencies": {
@@ -54,20 +55,34 @@
     "win": {
       "target": [
         {
-          "target": "portable",
+          "target": "nsis",
           "arch": [
             "x64"
           ]
         }
       ],
       "icon": "assets/icon.ico",
-      "artifactName": "FomoTradingbot.exe",
       "signAndEditExecutable": true
     },
-    "portable": {
-      "artifactName": "FomoTradingbot.exe"
-    },
     "compression": "normal",
-    "npmRebuild": false
+    "npmRebuild": false,
+    "nsis": {
+      "oneClick": true,
+      "perMachine": false,
+      "runAfterFinish": true,
+      "createDesktopShortcut": true,
+      "createStartMenuShortcut": true,
+      "shortcutName": "Fomo Tradingbot",
+      "artifactName": "FomoTradingbot-Setup.exe",
+      "deleteAppDataOnUninstall": false
+    },
+    "publish": [
+      {
+        "provider": "github",
+        "owner": "rimidalvsulrod",
+        "repo": "fomo-tradingbot",
+        "releaseType": "release"
+      }
+    ]
   }
 }

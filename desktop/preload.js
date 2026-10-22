@@ -13,6 +13,7 @@ contextBridge.exposeInMainWorld('bot', {
   setCloseToTray: inv('app:setCloseToTray'),
   open: inv('app:open'),
   copy: inv('app:copy'),
+  update: { state: inv('app:updateState'), install: inv('app:installUpdate'), onState: on('app:update') },
   req: inv('engine:req'),
   onEvent: on('engine:event'),
   conn: {

@@ -6,6 +6,7 @@ const os = require('os');
 const path = require('path');
 const { spawn, exec } = require('child_process');
 const { Engine, startApi, lanAddresses, secure, VERSION } = require('../engine');
+const { downloadUpdate, swapAndRestart, cleanupOld } = require('./update');
 
 const C = {
   reset: '\x1b[0m', dim: '\x1b[2m', bold: '\x1b[1m',
@@ -34,13 +35,7 @@ async function main() {
   engine.on('event', (ev) => { if (ev.type === 'log') printLog(ev.entry); });
   engine.on('pin', () => printPairing());
 
-  api = startApi(engine, { port: cfg.port, token: cfg.token, name: cfg.name });
-  try {
-    await api.ready;
-  } catch (e) {
-    if (e.code === 'EADDRINUSE') throw new Error(`Port ${cfg.port} is already in use. Is the server already running? (change "port" in ${cfgFile})`);
-    throw e;
-  }
+  api = await startApiWithRetry();
   engine.start();
   if (!args['allow-sleep']) keepAwake = preventSleep();
 
@@ -48,10 +43,51 @@ async function main() {
   printHelp();
   setupKeys();
   setInterval(printHeartbeat, 15 * 60e3);
+  setupAutoUpdate();
 
   process.on('uncaughtException', (e) => line(C.red, 'error', `Unexpected: ${e.message}`));
   process.on('unhandledRejection', (e) => line(C.red, 'error', `Unexpected: ${e && e.message ? e.message : e}`));
   for (const sig of ['SIGINT', 'SIGTERM', 'SIGHUP']) process.on(sig, shutdown);
+}
+
+// After a self-update the previous process may still be releasing the port for a moment.
+async function startApiWithRetry() {
+  for (let i = 0; ; i++) {
+    const a = startApi(engine, { port: cfg.port, token: cfg.token, name: cfg.name });
+    try {
+      await a.ready;
+      return a;
+    } catch (e) {
+      await a.close().catch(() => {});
+      if (e.code !== 'EADDRINUSE') throw e;
+      if (i >= 15) throw new Error(`Port ${cfg.port} is already in use. Is the server already running? (change "port" in ${cfgFile})`);
+      await new Promise((r) => setTimeout(r, 1000));
+    }
+  }
+}
+
+function setupAutoUpdate() {
+  if (!isPackaged || args['no-update']) return;
+  cleanupOld(exePath);
+  let busy = false;
+  const run = async () => {
+    if (busy) return;
+    busy = true;
+    try {
+      const u = await downloadUpdate(VERSION, exePath);
+      if (!u) return;
+      line(C.green, 'success', `Update ${u.version} downloaded — restarting into the new version…`);
+      await stopAll();
+      swapAndRestart(exePath, u.file, process.argv.slice(2));
+      process.exit(0);
+    } catch (e) {
+      line(C.yellow, 'warn', `Update check failed: ${e.message}`);
+    } finally {
+      busy = false;
+    }
+  };
+  setTimeout(run, 15000);
+  setInterval(run, 3 * 3600e3);
 }
 
 function banner() {
@@ -157,11 +193,15 @@ function preventSleep() {
   }
 }
 
-async function shutdown() {
-  line(C.yellow, 'warn', 'Shutting down…');
+async function stopAll() {
   try { keepAwake && keepAwake.kill(); } catch { /* gone */ }
   try { engine && engine.stop(); } catch { /* ignore */ }
   try { api && (await api.close()); } catch { /* ignore */ }
+}
+
+async function shutdown() {
+  line(C.yellow, 'warn', 'Shutting down…');
+  await stopAll();
   process.exit(0);
 }
 

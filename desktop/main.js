@@ -190,6 +190,11 @@ function createWindow() {
       saveCfg();
     }
   });
+  // Hidden helper windows (fomo session) would otherwise keep the app alive with no main window.
+  win.on('closed', () => {
+    win = null;
+    if (!quitting) { quitting = true; app.quit(); }
+  });
 }
 
 function createTray() {
@@ -213,7 +218,8 @@ function updateTray() {
 }
 
 function showWindow() {
-  if (!win) createWindow();
+  if (!win || win.isDestroyed()) { createWindow(); return; }
+  if (win.isMinimized()) win.restore();
   win.show();
   win.focus();
 }
@@ -293,6 +299,28 @@ handle('fomo:leaderboard', (w) => fomo.leaderboard(w));
 handle('fomo:profile', (ref) => fomo.profile(ref));
 
 // ---------- lifecycle ----------
+// ---------- auto-update (GitHub releases) ----------
+let updateState = { state: 'idle', version: null };
+function setUpdateState(s) { updateState = s; send('app:update', s); }
+
+function setupUpdates() {
+  if (!app.isPackaged) return;
+  const { autoUpdater } = require('electron-updater');
+  autoUpdater.autoDownload = true;
+  autoUpdater.autoInstallOnAppQuit = true;
+  autoUpdater.on('update-available', (i) => setUpdateState({ state: 'downloading', version: i.version }));
+  autoUpdater.on('update-downloaded', (i) => {
+    setUpdateState({ state: 'ready', version: i.version });
+    if (tray) tray.displayBalloon({ title: 'Update ready', content: `Fomo Tradingbot ${i.version} is ready. Restart from the app to install it.`, iconType: 'info' });
+  });
+  autoUpdater.on('error', (e) => dlog('update error', e));
+  const check = () => autoUpdater.checkForUpdates().catch((e) => dlog('update check failed', e));
+  setTimeout(check, 5000);
+  setInterval(check, 3 * 3600e3);
+  handle('app:installUpdate', () => { quitting = true; autoUpdater.quitAndInstall(true, true); return { ok: true }; });
+}
+handle('app:updateState', () => updateState);
+
 app.on('second-instance', showWindow);
 app.on('before-quit', () => { quitting = true; });
 app.on('window-all-closed', () => { if (connState.kind !== 'local' || !cfg.closeToTray) app.quit(); });
@@ -303,6 +331,7 @@ app.whenReady().then(async () => {
   fomo = new FomoBridge();
   createWindow();
   try { createTray(); } catch (e) { dlog('tray failed', e); }
+  setupUpdates();
   try {
     await connect();
   } catch (e) {

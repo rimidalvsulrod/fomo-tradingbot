@@ -1089,6 +1089,16 @@ const gs = $('#globalSearch');
 gs.addEventListener('keydown', (e) => { if (e.key === 'Enter') { runSearch(gs.value); gs.blur(); } });
 document.addEventListener('keydown', (e) => { if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'k') { e.preventDefault(); gs.focus(); gs.select(); } });
 
+function renderUpdate(u) {
+  const b = $('#updBtn');
+  if (!u || u.state !== 'ready') { b.classList.add('hide'); return; }
+  b.classList.remove('hide');
+  b.innerHTML = `${icon('refresh')}Update to ${esc(u.version)} — restart`;
+}
+$('#updBtn').onclick = () => { $('#updBtn').innerHTML = '<span class="spinner sm"></span>Restarting…'; bot.update.install(); };
+bot.update.onState(renderUpdate);
+bot.update.state().then(renderUpdate);
+
 bot.onEvent(onEngineEvent);
 bot.conn.onState((s) => { const was = S.conn.connected; S.conn = s; renderChrome(); if (s.connected && !was) loadAll().then(render); if (S.route === 'settings') soon('render', render); });
 
