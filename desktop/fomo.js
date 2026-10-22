@@ -1,7 +1,10 @@
 'use strict';
 // Fomo bridge: runs Fomo API calls inside a hidden fomo.family window so they use the user's own
 // signed-in session (Fomo requires login to search and view profiles). No credentials touch this app.
-const { BrowserWindow, session, shell, dialog } = require('electron');
+const fs = require('fs');
+const path = require('path');
+const { app, BrowserWindow, session, shell, dialog } = require('electron');
+const { browserLogin } = require('./browser-login');
 
 const ORIGIN = 'https://fomo.family';
 const API = 'https://prod-api.fomo.family';
@@ -16,6 +19,7 @@ class FomoBridge {
     this.ready = null;
     this.me = null;
     this.ses = session.fromPartition(PARTITION);
+    this.browserProfile = path.join(app.getPath('userData'), 'fomo-browser');
   }
 
   _ensure() {
@@ -77,7 +81,7 @@ class FomoBridge {
           type: 'info',
           title: 'Google sign-in isn\'t available here',
           message: 'Google doesn\'t allow signing in from inside apps.',
-          detail: 'Close the Google window and pick another option on the fomo login screen — Email (use the same address as your Google account), Apple, or X.',
+          detail: 'Close this window and use "Sign in with browser" instead — it opens fomo in Chrome/Edge where Google sign-in works.',
         });
       });
       watchGoogle(w.webContents);
@@ -103,8 +107,40 @@ class FomoBridge {
     });
   }
 
+  // Sign in through the user's real Chrome/Edge, then move the fomo session into this app's fomo window.
+  async loginWithBrowser() {
+    const expr = `(${pageFetch.toString()})(${JSON.stringify(API + '/v2/users/current')}, ${JSON.stringify(CHAINS)})` +
+      '.then((r) => (r.status === 200 && r.body && r.body.success !== false ? true : null))';
+    const got = await browserLogin({ profileDir: this.browserProfile, checkSignedInExpr: expr });
+    await this._importSession(got);
+    return this.status();
+  }
+
+  async _importSession(got) {
+    for (const c of got.cookies) {
+      const host = c.domain.replace(/^\./, '');
+      await this.ses.cookies.set({
+        url: `https://${host}${c.path || '/'}`,
+        name: c.name,
+        value: c.value,
+        domain: c.domain.startsWith('.') ? c.domain : undefined,
+        path: c.path,
+        secure: c.secure,
+        httpOnly: c.httpOnly,
+        expirationDate: c.expires > 0 ? c.expires : undefined,
+        sameSite: { Strict: 'strict', Lax: 'lax', None: 'no_restriction' }[c.sameSite] || 'unspecified',
+      }).catch(() => {});
+    }
+    await this._ensure();
+    await this.win.webContents.executeJavaScript(
+      `(${(items) => { for (const [k, v] of items) localStorage.setItem(k, v); }})(${JSON.stringify(got.storage)})`, true);
+    this.win.destroy();
+    this.win = null;
+  }
+
   async logout() {
     await this.ses.clearStorageData();
+    try { fs.rmSync(this.browserProfile, { recursive: true, force: true }); } catch { /* browser may hold it */ }
     if (this.win && !this.win.isDestroyed()) this.win.destroy();
     this.win = null;
     this.me = null;

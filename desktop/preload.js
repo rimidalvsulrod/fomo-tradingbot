@@ -27,6 +27,7 @@ contextBridge.exposeInMainWorld('bot', {
   fomo: {
     status: inv('fomo:status'),
     login: inv('fomo:login'),
+    loginBrowser: inv('fomo:loginBrowser'),
     logout: inv('fomo:logout'),
     search: inv('fomo:search'),
     leaderboard: inv('fomo:leaderboard'),

@@ -438,9 +438,10 @@ function fomoSignInCard() {
       <div class="server-ico" style="width:46px;height:46px;border-radius:14px">${icon('link')}</div>
       <div class="grow">
         <div style="font-weight:800;font-size:16px">Connect your fomo account</div>
-        <div class="muted" style="margin-top:4px;line-height:1.5">fomo only shows profiles and search to signed-in users. Sign in on fomo.family in a secure window — the login stays on this PC and is only used to look traders up. Use <b style="color:var(--text)">Email</b>, Apple or X: Google doesn't allow its sign-in inside apps. You can still copy any Solana wallet without signing in.</div>
+        <div class="muted" style="margin-top:4px;line-height:1.5">fomo only shows profiles and search to signed-in users. This opens fomo.family in Chrome/Edge — sign in any way you like, including Google. The window closes by itself once you're in, and the login stays on this PC. You can still copy any Solana wallet without signing in.</div>
+        <a class="small" id="fomoLoginApp" style="display:inline-block;margin-top:8px">Or sign in inside the app (Email, Apple, X)</a>
       </div>
-      <button class="btn white" id="fomoLogin">${icon('logout')}Sign in to fomo</button>
+      <button class="btn white" id="fomoLogin">${icon('ext')}Sign in with browser</button>
     </div>
   </div>`;
 }
@@ -508,7 +509,8 @@ VIEW_BIND.discover = (root) => {
   $$('[data-dtab]', root).forEach((b) => b.onclick = () => { S.discover.tab = b.dataset.dtab; render(); if (b.dataset.dtab === 'leaderboard' && !S.discover.lb) loadLeaderboard(); });
   $$('[data-lbw]', root).forEach((b) => b.onclick = () => { S.discover.lbWindow = b.dataset.lbw; loadLeaderboard(); });
   const r = $('#lbRetry', root); if (r) r.onclick = loadLeaderboard;
-  const fl = $('#fomoLogin', root); if (fl) fl.onclick = fomoLogin;
+  const fl = $('#fomoLogin', root); if (fl) fl.onclick = () => fomoLogin();
+  const fa = $('#fomoLoginApp', root); if (fa) fa.onclick = () => fomoLogin(true);
   $$('[data-copyuser]', root).forEach((b) => b.onclick = async (e) => {
     e.stopPropagation();
     const ref = b.dataset.copyuser;
@@ -523,12 +525,21 @@ VIEW_BIND.discover = (root) => {
   if (S.discover.tab === 'leaderboard' && S.fomo.signedIn && !S.discover.lb && !S.discover.lbError) loadLeaderboard();
 };
 
-async function fomoLogin() {
-  toast('Sign in on the fomo window — use Email, Apple or X (Google sign-in isn\'t allowed in apps)', 'info', 7000);
-  const r = await bot.fomo.login();
-  S.fomo = { signedIn: !!r.signedIn, me: r.me || null, checked: true };
-  if (r.signedIn) { toast(`Signed in to fomo as @${r.me?.handle || r.me?.name}`, 'success'); S.discover.lb = null; }
-  else toast('Not signed in to fomo', 'warn');
+let fomoLoginBusy = false;
+async function fomoLogin(inApp = false) {
+  if (fomoLoginBusy) return;
+  fomoLoginBusy = true;
+  $$('#fomoLogin').forEach((b) => { b.disabled = true; b.innerHTML = '<span class="spinner sm"></span>Waiting for sign-in…'; });
+  toast(inApp === true ? 'Sign in on the fomo window (Email, Apple or X)' : 'Sign in to fomo in the browser window that opened — it closes by itself when you\'re in', 'info', 8000);
+  const r = inApp === true ? await bot.fomo.login() : await bot.fomo.loginBrowser();
+  fomoLoginBusy = false;
+  if (r && r.error) {
+    toast(r.error, 'error', 8000);
+  } else {
+    S.fomo = { signedIn: !!r.signedIn, me: r.me || null, checked: true };
+    if (r.signedIn) { toast(`Signed in to fomo as @${r.me?.handle || r.me?.name}`, 'success'); S.discover.lb = null; }
+    else toast('Not signed in to fomo', 'warn');
+  }
   render();
 }
 
@@ -991,7 +1002,7 @@ VIEW_BIND.settings = (root) => {
     if (!(await confirmModal({ title: 'Remove wallet?', body: 'The bot will forget this key and switch to paper mode. Your funds stay in the wallet — make sure you have the key backed up.', ok: 'Remove', danger: true }))) return;
     try { await DEL('/api/wallet'); SET.newSecret = null; await loadAll(); render(); } catch (e) { toast(e.message, 'error'); }
   });
-  b('fomoLogin', fomoLogin);
+  b('fomoLogin', () => fomoLogin());
   b('fomoLogout', async () => { await bot.fomo.logout(); S.fomo = { signedIn: false, me: null, checked: true }; S.discover.lb = null; render(); toast('Signed out of fomo'); });
   $$('[data-mode]', root).forEach((el) => el.onclick = async () => {
     const mode = el.dataset.mode;

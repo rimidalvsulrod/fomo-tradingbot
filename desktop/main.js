@@ -282,6 +282,11 @@ handle('wallet:generate', async () => {
 
 handle('fomo:status', () => fomo.status());
 handle('fomo:login', () => fomo.login(win));
+handle('fomo:loginBrowser', async () => {
+  const r = await fomo.loginWithBrowser();
+  if (win && !win.isDestroyed()) { win.show(); win.focus(); }
+  return r;
+});
 handle('fomo:logout', () => fomo.logout());
 handle('fomo:search', (q) => fomo.search(q));
 handle('fomo:leaderboard', (w) => fomo.leaderboard(w));
