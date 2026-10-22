@@ -1,5 +1,5 @@
 'use strict';
-// Builds dist/FomoTradingbotServer.exe: esbuild bundle -> Node single executable application.
+// Builds dist/PumpfunBotServer.exe: esbuild bundle -> Node single executable application.
 const fs = require('fs');
 const path = require('path');
 const { execFileSync } = require('child_process');
@@ -7,7 +7,7 @@ const { execFileSync } = require('child_process');
 const root = path.join(__dirname, '..');
 const build = path.join(root, 'build', 'server');
 const dist = path.join(root, 'dist');
-const exe = path.join(dist, 'FomoTradingbotServer.exe');
+const exe = path.join(dist, 'PumpfunBotServer.exe');
 const version = require('../package.json').version;
 
 fs.mkdirSync(build, { recursive: true });
@@ -44,12 +44,12 @@ execFileSync(rcedit, [exe,
   '--set-icon', path.join(root, 'assets', 'server-icon.ico'),
   '--set-file-version', version,
   '--set-product-version', version,
-  '--set-version-string', 'ProductName', 'Fomo Tradingbot Server',
-  '--set-version-string', 'FileDescription', 'Fomo Tradingbot Server',
-  '--set-version-string', 'CompanyName', 'Fomo Tradingbot',
+  '--set-version-string', 'ProductName', 'Pumpfun Bot Server',
+  '--set-version-string', 'FileDescription', 'Pumpfun Bot Server',
+  '--set-version-string', 'CompanyName', 'Pumpfun Bot',
   '--set-version-string', 'LegalCopyright', 'MIT License',
-  '--set-version-string', 'OriginalFilename', 'FomoTradingbotServer.exe',
-  '--set-version-string', 'InternalName', 'FomoTradingbotServer',
+  '--set-version-string', 'OriginalFilename', 'PumpfunBotServer.exe',
+  '--set-version-string', 'InternalName', 'PumpfunBotServer',
 ], { stdio: 'inherit' });
 
 console.log('• injecting app');

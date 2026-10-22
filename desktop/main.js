@@ -8,7 +8,8 @@ const WebSocket = require('ws');
 const { Engine, startApi, secure, DISCOVERY_PORT, DISCOVERY_MAGIC, VERSION } = require('../engine');
 
 app.setAppUserModelId('com.fomotradingbot.desktop');
-if (process.env.FOMOBOT_USERDATA) app.setPath('userData', process.env.FOMOBOT_USERDATA);
+// Data folder stays 'fomo-tradingbot' from before the rename so settings, wallet and traders carry over.
+app.setPath('userData', process.env.FOMOBOT_USERDATA || path.join(app.getPath('appData'), 'fomo-tradingbot'));
 if (!app.requestSingleInstanceLock()) { app.quit(); process.exit(0); }
 
 const userData = app.getPath('userData');
@@ -93,7 +94,7 @@ function state247() {
     run247: !!cfg.run247,
     lanAccess: !!cfg.lanAccess,
     lanActive: !!(local && local.lan),
-    lanError: cfg.lanAccess && local && !local.lan ? `Port ${cfg.lanPort || 7420} is in use on this PC (is FomoTradingbotServer.exe running here too?)` : null,
+    lanError: cfg.lanAccess && local && !local.lan ? `Port ${cfg.lanPort || 7420} is in use on this PC (is PumpfunBotServer.exe running here too?)` : null,
     port: local && local.lan ? local.port : cfg.lanPort || 7420,
     pin: local && local.lan ? local.api.pin : null,
     ips,
@@ -176,7 +177,7 @@ async function engineRequest(method, p, body) {
 
 function friendlyNetError(e) {
   const m = String(e?.cause?.code || e?.code || e?.message || e);
-  if (/ECONNREFUSED/.test(m)) return 'Server not reachable — is FomoTradingbotServer.exe running?';
+  if (/ECONNREFUSED/.test(m)) return 'Bot not reachable — is the other PC on and the bot running?';
   if (/ETIMEDOUT|EHOSTUNREACH|ENETUNREACH|timeout|aborted/i.test(m)) return 'Server not reachable — check the IP and that both PCs are on the same network';
   return e?.message || m;
 }
@@ -217,7 +218,7 @@ function createWindow() {
   win = new BrowserWindow({
     width: 1360, height: 860, minWidth: 1040, minHeight: 660,
     backgroundColor: '#060510',
-    title: 'Fomo Tradingbot',
+    title: 'Pumpfun Bot',
     icon: path.join(__dirname, '..', 'assets', 'icon.ico'),
     titleBarStyle: 'hidden',
     titleBarOverlay: { color: '#060510', symbolColor: '#9899a3', height: 44 },
@@ -235,7 +236,7 @@ function createWindow() {
     e.preventDefault();
     win.hide();
     if (!cfg.trayHintShown && tray) {
-      tray.displayBalloon({ title: 'Still copy trading', content: 'Fomo Tradingbot keeps running in the tray. Right-click the icon to quit.', iconType: 'info' });
+      tray.displayBalloon({ title: 'Still copy trading', content: 'Pumpfun Bot keeps running in the tray. Right-click the icon to quit.', iconType: 'info' });
       cfg.trayHintShown = true;
       saveCfg();
     }
@@ -249,16 +250,16 @@ function createWindow() {
 
 function createTray() {
   tray = new Tray(nativeImage.createFromPath(path.join(__dirname, '..', 'assets', 'icon.ico')));
-  tray.setToolTip('Fomo Tradingbot');
+  tray.setToolTip('Pumpfun Bot');
   tray.on('click', showWindow);
   updateTray();
 }
 
 function updateTray() {
   if (!tray) return;
-  tray.setToolTip(`Fomo Tradingbot — ${connState.connected ? (connState.kind === 'local' ? 'running on this PC' : 'connected to ' + connState.name) : 'disconnected'}`);
+  tray.setToolTip(`Pumpfun Bot — ${connState.connected ? (connState.kind === 'local' ? 'running on this PC' : 'connected to ' + connState.name) : 'disconnected'}`);
   tray.setContextMenu(Menu.buildFromTemplate([
-    { label: 'Open Fomo Tradingbot', click: showWindow },
+    { label: 'Open Pumpfun Bot', click: showWindow },
     { type: 'separator' },
     { label: 'Pause copy trading', click: () => engineRequest('POST', '/api/bot/stop') },
     { label: 'Resume copy trading', click: () => engineRequest('POST', '/api/bot/start') },
@@ -363,7 +364,7 @@ function setupUpdates() {
   autoUpdater.on('update-available', (i) => setUpdateState({ state: 'downloading', version: i.version }));
   autoUpdater.on('update-downloaded', (i) => {
     setUpdateState({ state: 'ready', version: i.version });
-    if (tray) tray.displayBalloon({ title: 'Update ready', content: `Fomo Tradingbot ${i.version} is ready. Restart from the app to install it.`, iconType: 'info' });
+    if (tray) tray.displayBalloon({ title: 'Update ready', content: `Pumpfun Bot ${i.version} is ready. Restart from the app to install it.`, iconType: 'info' });
   });
   autoUpdater.on('error', (e) => dlog('update error', e));
   const check = () => autoUpdater.checkForUpdates().catch((e) => dlog('update check failed', e));
@@ -388,7 +389,7 @@ app.whenReady().then(async () => {
     await connect();
   } catch (e) {
     dlog('connect failed', e);
-    dialog.showErrorBox('Fomo Tradingbot', 'Could not start the trading engine: ' + e.message);
+    dialog.showErrorBox('Pumpfun Bot', 'Could not start the trading engine: ' + e.message);
   }
   if (process.env.FOMOBOT_SCREENSHOT) captureScreens(process.env.FOMOBOT_SCREENSHOT);
 });

@@ -9,7 +9,7 @@ const secure = require('./secure');
 const { Jupiter, SOL_MINT, sleep } = require('./jupiter');
 const { keypairFromSecret, tokenBalanceRaw, parseSwap, getParsedTx, keyStr } = require('./solana');
 
-const VERSION = '1.4.0';
+const VERSION = '1.5.0';
 
 const DEFAULT_SETTINGS = {
   mode: 'paper', // 'paper' simulates fills with live quotes; 'live' signs real transactions

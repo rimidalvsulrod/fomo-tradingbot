@@ -119,7 +119,6 @@ const S = {
   trades: [],
   logs: [],
   conn: { connected: false, kind: 'local' },
-  fomo: { signedIn: false, me: null, checked: false },
   discover: { q: '', error: null },
   activityTab: 'trades',
   activityFilter: 'all',
@@ -812,9 +811,9 @@ VIEWS.settings = () => {
         ${S.always.lanError ? `<div class="note warn" style="margin-top:8px">${icon('warn')}<div>${esc(S.always.lanError)}</div></div>` : ''}
         ${S.always.lanActive ? `<div class="server-item" style="margin-top:8px"><div class="server-ico">${icon('link')}</div><div class="grow"><div class="small muted">On your other PC: Settings → Find computers, or enter</div><div class="mono" style="margin-top:2px">${S.always.ips.map((i) => `${esc(i.address)}:${esc(S.always.port)}`).join(' · ') || 'no network found'}</div></div><div style="text-align:right"><div class="small muted">Pairing code</div><div class="num" style="font-size:22px;font-weight:800;letter-spacing:.12em">${esc(String(S.always.pin || '').replace(/(\d{3})(\d{3})/, '$1 $2'))}</div><a class="small" id="newPin">New code</a></div></div>` : ''}` : ''}
         <div class="sec-title">${c.kind === 'local' ? 'Control a bot on another PC' : 'Switch computer'}</div>
-        <div class="muted small" style="line-height:1.55;margin-bottom:12px">If the bot runs on another PC (this app with “Let my other PCs connect” on, or FomoTradingbotServer.exe), find it here. Both PCs need to be on the same network.</div>
+        <div class="muted small" style="line-height:1.55;margin-bottom:12px">If the bot runs on another PC (this app with “Let my other PCs connect” on, or PumpfunBotServer.exe), find it here. Both PCs need to be on the same network.</div>
         <div class="row"><button class="btn primary" id="discoverBtn">${SET.discovering ? '<span class="spinner sm"></span>Searching…' : icon('search') + 'Find computers'}</button><button class="btn ghost" id="manualConn">Enter IP manually</button></div>
-        ${SET.discovered ? `<div style="margin-top:14px">${SET.discovered.length ? SET.discovered.map((d) => `<div class="server-item"><div class="server-ico">${icon('server')}</div><div class="grow"><div style="font-weight:700">${esc(d.name)}</div><div class="small muted mono">${esc(d.host)}:${esc(d.port)} · v${esc(d.version)}</div></div><button class="btn primary sm" data-pair="${esc(d.host)}" data-port="${esc(d.port)}" data-name="${esc(d.name)}">Pair</button></div>`).join('') : `<div class="note warn">${icon('warn')}<div>Nothing found. Make sure the bot is running on the other PC (this app with “Let my other PCs connect” on, or FomoTradingbotServer.exe), both PCs are on the same Wi-Fi/LAN, and Windows Firewall allowed it (it asks the first time). Or use “Enter IP manually”.</div></div>`}</div>` : ''}
+        ${SET.discovered ? `<div style="margin-top:14px">${SET.discovered.length ? SET.discovered.map((d) => `<div class="server-item"><div class="server-ico">${icon('server')}</div><div class="grow"><div style="font-weight:700">${esc(d.name)}</div><div class="small muted mono">${esc(d.host)}:${esc(d.port)} · v${esc(d.version)}</div></div><button class="btn primary sm" data-pair="${esc(d.host)}" data-port="${esc(d.port)}" data-name="${esc(d.name)}">Pair</button></div>`).join('') : `<div class="note warn">${icon('warn')}<div>Nothing found. Make sure the bot is running on the other PC (this app with “Let my other PCs connect” on, or PumpfunBotServer.exe), both PCs are on the same Wi-Fi/LAN, and Windows Firewall allowed it (it asks the first time). Or use “Enter IP manually”.</div></div>`}</div>` : ''}
       </div>
 
       <div class="card">
@@ -876,7 +875,7 @@ VIEWS.settings = () => {
       <div class="card">
         <div class="card-h">${icon('info')}<h3>App</h3><span class="muted small" style="margin-left:auto">v${esc(S.info.version || '')}</span></div>
         <div class="toggle-row"><div class="grow"><div class="t">Keep running in the tray</div><div class="d">Closing the window keeps the local engine copying</div></div><label class="switch"><input type="checkbox" id="trayToggle" ${S.info.closeToTray ? 'checked' : ''}><span></span></label></div>
-        <div class="small faint" style="margin-top:10px;line-height:1.5">Unofficial tool, not affiliated with Fomo Labs or pump.fun. Copy trading is risky — memecoins can go to zero in minutes. Nothing here is financial advice.</div>
+        <div class="small faint" style="margin-top:10px;line-height:1.5">Unofficial tool, not affiliated with pump.fun or Fomo Labs. Copy trading is risky — memecoins can go to zero in minutes. Nothing here is financial advice.</div>
       </div>
     </div>
   </div>`;

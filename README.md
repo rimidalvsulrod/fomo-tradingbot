@@ -1,19 +1,19 @@
-# fomo tradingbot
+# Pumpfun Bot
 
 Copy-trade [pump.fun](https://pump.fun) traders (or any Solana wallet). Paste a trader's pump.fun profile link, hit **Copy**, and every buy and sell they make is mirrored into your wallet within seconds.
 
-> Unofficial tool — not affiliated with Fomo Labs or pump.fun. Copy trading memecoins is extremely risky. Not financial advice.
+> Unofficial tool — not affiliated with pump.fun or Fomo Labs. Copy trading memecoins is extremely risky. Not financial advice.
 
-**Website:** https://fomo-tradingbot.vercel.app
+**Website:** https://pumpfun-bot.vercel.app
 
 | Download | What it is |
 | --- | --- |
-| [FomoTradingbot-Setup.exe](https://github.com/rimidalvsulrod/fomo-tradingbot/releases/latest/download/FomoTradingbot-Setup.exe) | Desktop app (one-click install, updates itself). Add wallets to copy, manage copies, see positions. Can run the bot itself. |
-| [FomoTradingbotServer.exe](https://github.com/rimidalvsulrod/fomo-tradingbot/releases/latest/download/FomoTradingbotServer.exe) | Headless 24/7 engine for a spare PC. Updates itself. Pair the desktop app with it using a 6-digit code. |
+| [PumpfunBot-Setup.exe](https://github.com/rimidalvsulrod/fomo-tradingbot/releases/latest/download/PumpfunBot-Setup.exe) | Desktop app (one-click install, updates itself). Add wallets to copy, manage copies, see positions. Can run the bot itself. |
+| [PumpfunBotServer.exe](https://github.com/rimidalvsulrod/fomo-tradingbot/releases/latest/download/PumpfunBotServer.exe) | Headless 24/7 engine for a spare PC. Updates itself. Pair the desktop app with it using a 6-digit code. |
 
 ## Quick start
 
-1. Run **FomoTradingbot-Setup.exe** (SmartScreen: *More info → Run anyway*; it isn't code-signed). It installs in one click and updates itself from then on.
+1. Run **PumpfunBot-Setup.exe** (SmartScreen: *More info → Run anyway*; it isn't code-signed). It installs in one click and updates itself from then on.
 2. **Add trader** → paste a trader's pump.fun profile link (on pump.fun, click a name in any coin's trades). Solana wallets and Solscan/GMGN/Birdeye links work too. You'll see their recent on-chain trades.
 3. **Copy trader** → give them a name and choose a fixed SOL size or a % of their size.
 4. You start in **paper mode**: fills are simulated with live Jupiter quotes. When you're happy, go to **Settings → Trading wallet**, import or create a dedicated wallet, fund it, and switch to **Live**.
@@ -24,7 +24,7 @@ Copy-trade [pump.fun](https://pump.fun) traders (or any Solana wallet). Paste a 
 2. **Settings → Run 24/7**: starts with Windows in the tray, keeps the PC awake, keeps copying with the window closed.
 3. Optional: turn on **Let my other PCs connect**, then on your main PC use **Settings → Find computers** and enter the pairing code to control it remotely (same network).
 
-`FomoTradingbotServer.exe` is still available as a headless alternative (console window, no UI). Server keys: `S` startup, `P` new pairing code, `T` show access token, `I` status, `O` data folder, `Q` quit. Flags: `--port 7420`, `--data <dir>`, `--allow-sleep`.
+`PumpfunBotServer.exe` is still available as a headless alternative (console window, no UI). Server keys: `S` startup, `P` new pairing code, `T` show access token, `I` status, `O` data folder, `Q` quit. Flags: `--port 7420`, `--data <dir>`, `--allow-sleep`.
 
 ## How it works
 
@@ -44,7 +44,7 @@ npm install
 npm start              # desktop app (dev)
 npm run server         # server in the terminal
 npm test               # engine self-test against mainnet (paper trades)
-npm run build          # dist/FomoTradingbotServer.exe + dist/FomoTradingbot.exe
+npm run build          # dist/PumpfunBotServer.exe + dist/PumpfunBot-Setup.exe
 ```
 
 Layout: `engine/` (copy-trading engine + HTTP/WS API), `server/` (24/7 console app), `desktop/` (Electron app), `web/` (Vercel site), `scripts/` (builds and tests).
@@ -55,7 +55,7 @@ MIT License.
 
 ```bash
 npm run build
-gh release create vX.Y.Z dist/FomoTradingbot-Setup.exe dist/FomoTradingbot-Setup.exe.blockmap dist/latest.yml dist/FomoTradingbotServer.exe
+gh release create vX.Y.Z dist/PumpfunBot-Setup.exe dist/PumpfunBot-Setup.exe.blockmap dist/latest.yml dist/PumpfunBotServer.exe
 ```
 
 Installed apps and running servers pick up the new release automatically.

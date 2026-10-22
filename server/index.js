@@ -1,6 +1,6 @@
 'use strict';
 process.noDeprecation = true;
-// Fomo Tradingbot Server — headless 24/7 copy-trading engine for a spare PC.
+// Pumpfun Bot Server — headless 24/7 copy-trading engine for a spare PC.
 const fs = require('fs');
 const os = require('os');
 const path = require('path');
@@ -29,7 +29,7 @@ main().catch((e) => {
 });
 
 async function main() {
-  process.stdout.write('\x1b]0;Fomo Tradingbot Server\x07');
+  process.stdout.write('\x1b]0;Pumpfun Bot Server\x07');
   banner();
   engine = new Engine({ dataDir });
   engine.on('event', (ev) => { if (ev.type === 'log') printLog(ev.entry); });
@@ -92,9 +92,9 @@ function setupAutoUpdate() {
 
 function banner() {
   console.log('');
-  console.log(`  ${C.blue}${C.bold}fomo${C.reset}${C.white}${C.bold} tradingbot${C.reset}  ${C.gray}server v${VERSION}${C.reset}`);
+  console.log(`  ${C.blue}${C.bold}pumpfun${C.reset}${C.white}${C.bold} bot${C.reset}  ${C.gray}server v${VERSION}${C.reset}`);
   console.log(`  ${C.gray}Copy-trading engine that keeps running 24/7. Leave this window open.${C.reset}`);
-  console.log(`  ${C.dim}Unofficial tool — not affiliated with Fomo Labs.${C.reset}`);
+  console.log(`  ${C.dim}Unofficial tool — not affiliated with pump.fun or Fomo Labs.${C.reset}`);
   console.log('');
 }
 
@@ -172,7 +172,7 @@ function toggleStartup() {
     line(C.yellow, 'warn', 'Will no longer start with Windows');
   } else {
     const cmd = isPackaged ? `"${exePath}"` : `"${exePath}" "${path.resolve(process.argv[1])}"`;
-    fs.writeFileSync(f, `@echo off\r\ncd /d "${path.dirname(exePath)}"\r\nstart "Fomo Tradingbot Server" ${cmd}\r\n`);
+    fs.writeFileSync(f, `@echo off\r\ncd /d "${path.dirname(exePath)}"\r\nstart "Pumpfun Bot Server" ${cmd}\r\n`);
     line(C.green, 'success', 'Will start automatically when you sign in to Windows');
   }
 }

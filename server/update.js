@@ -1,5 +1,5 @@
 'use strict';
-// Self-update for the packaged server: pulls FomoTradingbotServer.exe from the latest GitHub release,
+// Self-update for the packaged server: pulls the server exe from the latest GitHub release,
 // swaps it in place of the running exe (Windows allows renaming a running exe) and restarts.
 const fs = require('fs');
 const { spawn } = require('child_process');
@@ -7,7 +7,8 @@ const { Readable } = require('stream');
 const { pipeline } = require('stream/promises');
 
 const LATEST = 'https://api.github.com/repos/rimidalvsulrod/fomo-tradingbot/releases/latest';
-const ASSET = 'FomoTradingbotServer.exe';
+// Current name first; older releases (and older servers looking for it) use the pre-rename name.
+const ASSETS = ['PumpfunBotServer.exe', 'FomoTradingbotServer.exe'];
 
 function newer(a, b) {
   const x = a.split('.').map(Number);
@@ -27,7 +28,7 @@ async function downloadUpdate(current, exePath) {
   const rel = await res.json();
   const version = String(rel.tag_name || '').replace(/^v/, '');
   if (!version || !newer(version, current)) return null;
-  const asset = (rel.assets || []).find((a) => a.name === ASSET);
+  const asset = ASSETS.map((n) => (rel.assets || []).find((a) => a.name === n)).find(Boolean);
   if (!asset) return null;
   const file = exePath + '.new';
   const dl = await fetch(asset.browser_download_url, { headers: { 'user-agent': 'fomo-tradingbot-server' } });
@@ -43,7 +44,7 @@ function swapAndRestart(exePath, newFile, args) {
   fs.renameSync(exePath, exePath + '.old');
   fs.renameSync(newFile, exePath);
   const quoted = args.map((a) => `"${String(a).replace(/"/g, '')}"`).join(' ');
-  spawn('cmd.exe', ['/c', `start "Fomo Tradingbot Server" "${exePath}" ${quoted}`], {
+  spawn('cmd.exe', ['/c', `start "Pumpfun Bot Server" "${exePath}" ${quoted}`], {
     detached: true, stdio: 'ignore', windowsVerbatimArguments: true,
   }).unref();
 }
