@@ -1,6 +1,6 @@
 # fomo tradingbot
 
-Copy-trade traders from the [fomo](https://fomo.family) app on Solana. Search anyone on fomo, hit **Copy**, and every buy and sell they make is mirrored into your wallet within seconds.
+Copy-trade traders from the [fomo](https://fomo.family) app (or anyone else) on Solana. Paste a trader's Solana wallet, hit **Copy**, and every buy and sell they make is mirrored into your wallet within seconds.
 
 > Unofficial tool — not affiliated with Fomo Labs. Copy trading memecoins is extremely risky. Not financial advice.
 
@@ -8,14 +8,14 @@ Copy-trade traders from the [fomo](https://fomo.family) app on Solana. Search an
 
 | Download | What it is |
 | --- | --- |
-| [FomoTradingbot-Setup.exe](https://github.com/rimidalvsulrod/fomo-tradingbot/releases/latest/download/FomoTradingbot-Setup.exe) | Desktop app (one-click install, updates itself). Search fomo, manage copies, see positions. Can run the bot itself. |
+| [FomoTradingbot-Setup.exe](https://github.com/rimidalvsulrod/fomo-tradingbot/releases/latest/download/FomoTradingbot-Setup.exe) | Desktop app (one-click install, updates itself). Add wallets to copy, manage copies, see positions. Can run the bot itself. |
 | [FomoTradingbotServer.exe](https://github.com/rimidalvsulrod/fomo-tradingbot/releases/latest/download/FomoTradingbotServer.exe) | Headless 24/7 engine for a spare PC. Updates itself. Pair the desktop app with it using a 6-digit code. |
 
 ## Quick start
 
 1. Run **FomoTradingbot-Setup.exe** (SmartScreen: *More info → Run anyway*; it isn't code-signed). It installs in one click and updates itself from then on.
-2. **Discover → Sign in to fomo** to search traders (fomo only shows profiles to signed-in users). Or paste any Solana wallet.
-3. Open a trader → **Copy trader** → choose a fixed SOL size or a % of their size.
+2. **Add trader** → paste the trader's Solana wallet address. You'll see their recent on-chain trades.
+3. **Copy trader** → give them a name and choose a fixed SOL size or a % of their size.
 4. You start in **paper mode**: fills are simulated with live Jupiter quotes. When you're happy, go to **Settings → Trading wallet**, import or create a dedicated wallet, fund it, and switch to **Live**.
 
 ### Run it 24/7 on another PC
@@ -31,7 +31,7 @@ Both PCs must be on the same network for discovery and pairing. Server keys: `S`
 - **Signals:** the engine watches each copied wallet on-chain (RPC polling + websocket log triggers) and parses each transaction's balance changes into buy/sell legs — DEX-agnostic, works for pump.fun, Raydium, Meteora, Jupiter routes, etc.
 - **Execution:** swaps go through Jupiter Ultra (fallback: Jupiter Swap API + your RPC). Sells mirror the trader's sold fraction of their bag.
 - **Risk:** per-trader sizing, max per trade, daily SOL limit, reserve, max positions, buy-once-per-token, take-profit/stop-loss, stale-signal and dust filters.
-- **fomo data:** the desktop app opens fomo.family in a sandboxed window; you sign in there yourself and the app calls fomo's API from that session to search users, load leaderboards, profiles, holdings and trades. Your fomo login never leaves your PC.
+- **No fomo login:** traders are added by wallet address. Wallet pages show recent trades read straight from the blockchain.
 - **Keys:** the wallet key is AES-256-GCM encrypted at rest with a machine-local key. Wallet imports to a remote server are encrypted with a key derived from the pairing token.
 
 Tip: the public Solana RPC is rate-limited. A free Helius/QuickNode RPC URL and a free Jupiter API key (Settings → Execution) make copying faster and more reliable.

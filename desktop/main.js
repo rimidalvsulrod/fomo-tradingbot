@@ -6,7 +6,6 @@ const os = require('os');
 const dgram = require('dgram');
 const WebSocket = require('ws');
 const { Engine, startApi, secure, DISCOVERY_PORT, DISCOVERY_MAGIC, VERSION } = require('../engine');
-const { FomoBridge } = require('./fomo');
 
 app.setAppUserModelId('com.fomotradingbot.desktop');
 if (process.env.FOMOBOT_USERDATA) app.setPath('userData', process.env.FOMOBOT_USERDATA);
@@ -30,7 +29,6 @@ let conn = null; // { kind, base, token, name }
 let ws = null;
 let wsTimer = null;
 let connState = { connected: false, kind: cfg.connection.kind, name: null, error: null };
-let fomo = null;
 let connecting = null;
 
 function loadCfg() {
@@ -190,7 +188,7 @@ function createWindow() {
       saveCfg();
     }
   });
-  // Hidden helper windows (fomo session) would otherwise keep the app alive with no main window.
+  // Closing for real (not to the tray) quits the app instead of leaving it running without a window.
   win.on('closed', () => {
     win = null;
     if (!quitting) { quitting = true; app.quit(); }
@@ -286,18 +284,6 @@ handle('wallet:generate', async () => {
   return { data: { publicKey: r.data.publicKey, secret: secure.open(secure.transportKey(conn.token), r.data.enc) } };
 });
 
-handle('fomo:status', () => fomo.status());
-handle('fomo:login', () => fomo.login(win));
-handle('fomo:loginBrowser', async () => {
-  const r = await fomo.loginWithBrowser();
-  if (win && !win.isDestroyed()) { win.show(); win.focus(); }
-  return r;
-});
-handle('fomo:logout', () => fomo.logout());
-handle('fomo:search', (q) => fomo.search(q));
-handle('fomo:leaderboard', (w) => fomo.leaderboard(w));
-handle('fomo:profile', (ref) => fomo.profile(ref));
-
 // ---------- lifecycle ----------
 // ---------- auto-update (GitHub releases) ----------
 let updateState = { state: 'idle', version: null };
@@ -328,7 +314,6 @@ app.on('will-quit', async () => { closeWs(); if (local) local.engine.stop(); });
 
 app.whenReady().then(async () => {
   dlog('start', VERSION, app.isPackaged ? 'packaged' : 'dev');
-  fomo = new FomoBridge();
   createWindow();
   try { createTray(); } catch (e) { dlog('tray failed', e); }
   setupUpdates();

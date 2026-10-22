@@ -110,7 +110,7 @@ const S = {
   logs: [],
   conn: { connected: false, kind: 'local' },
   fomo: { signedIn: false, me: null, checked: false },
-  discover: { tab: 'leaderboard', q: '', results: null, lb: null, lbWindow: '24h', loading: false, error: null },
+  discover: { q: '', error: null },
   activityTab: 'trades',
   activityFilter: 'all',
   info: {},
@@ -126,14 +126,6 @@ const POST = (p, b) => api('POST', p, b || {});
 const PUT = (p, b) => api('PUT', p, b || {});
 const DEL = (p) => api('DELETE', p);
 
-async function fomoCall(fn, ...args) {
-  const r = await bot.fomo[fn](...args);
-  if (r && r.error && !Array.isArray(r)) {
-    if (r.code === 'FOMO_AUTH') { S.fomo.signedIn = false; renderChrome(); }
-    throw Object.assign(new Error(r.error), { code: r.code });
-  }
-  return r;
-}
 
 // ================= toasts & modals =================
 function toast(msg, level = 'info', ms = 4200) {
@@ -221,7 +213,7 @@ function onEngineEvent(ev) {
 // ================= chrome =================
 const NAV = [
   ['home', 'Home', 'home'],
-  ['discover', 'Discover', 'search'],
+  ['discover', 'Add trader', 'plus'],
   ['copying', 'Copying', 'copy'],
   ['portfolio', 'Portfolio', 'pie'],
   ['activity', 'Activity', 'activity'],
@@ -306,7 +298,7 @@ VIEWS.home = () => {
     </div>
    </div>
     <div class="hero-actions">
-      ${!active.length ? `<button class="btn white" data-go="discover">${icon('search')}Find traders to copy</button>` : ''}
+      ${!active.length ? `<button class="btn white" data-go="discover">${icon('plus')}Add a trader to copy</button>` : ''}
       <button class="btn ${st.running ? 'ghost' : 'green'}" id="heroRun">${st.running ? icon('pause') + 'Pause copying' : icon('play') + 'Start copying'}</button>
     </div>
   </div>
@@ -323,7 +315,7 @@ VIEWS.home = () => {
       <div class="card pad0">
         <div class="card-h" style="padding:18px 20px 0"><h3>Traders you copy</h3><a class="link" data-go="copying">Manage</a></div>
         ${active.length || S.targets.length ? `<div class="list" style="margin-top:6px">${S.targets.slice(0, 6).map(targetRow).join('')}</div>` : `
-          <div class="empty"><div class="ico">${icon('copy')}</div><h4>You're not copying anyone yet</h4><p>Search Fomo for a trader, open their profile and hit Copy. Every buy and sell they make gets mirrored.</p><button class="btn primary" data-go="discover">${icon('search')}Discover traders</button></div>`}
+          <div class="empty"><div class="ico">${icon('copy')}</div><h4>You're not copying anyone yet</h4><p>Paste a trader's Solana wallet and hit Copy. Every buy and sell they make gets mirrored.</p><button class="btn primary" data-go="discover">${icon('plus')}Add a trader</button></div>`}
       </div>
       <div class="card pad0">
         <div class="card-h" style="padding:18px 20px 0"><h3>Top positions</h3><a class="link" data-go="portfolio">View all</a></div>
@@ -369,7 +361,7 @@ function renderFeed() { const f = $('#feed'); if (f) { f.innerHTML = feedHtml();
 
 function targetRow(t) {
   const size = t.sizing === 'ratio' ? `${Math.round((t.ratio || 0) * 100)}% of their size` : `${fmtSol(t.fixedSol ?? S.settings?.defaultBuySol ?? 0)} SOL per buy`;
-  return `<div class="li click" data-profile="${esc(t.fomoUserId ? t.fomoUserId : 'wallet:' + t.address)}">
+  return `<div class="li click" data-profile="${esc('wallet:' + t.address)}">
     ${avatar(t.avatar, t.name)}
     <div class="grow"><div class="name ellipsis">${esc(t.name)}${t.handle ? ` <span class="muted" style="font-weight:500">@${esc(t.handle)}</span>` : ''}</div>
     <div class="meta">${esc(size)} · ${t.stats?.copied || 0} copied${t.stats?.lastTradeAt ? ' · last trade ' + agoText(t.stats.lastTradeAt) : ''}</div></div>
@@ -405,258 +397,111 @@ async function toggleRunning() {
   } catch (e) { toast(e.message, 'error'); }
 }
 
-// ---------- DISCOVER ----------
+// ---------- ADD TRADER ----------
 VIEWS.discover = () => {
   const d = S.discover;
-  const signed = S.fomo.signedIn;
-  const me = S.fomo.me;
   return `
-  <div class="row" style="align-items:flex-end;margin-bottom:18px">
-    <div class="grow"><div class="page-title">Discover traders</div><div class="page-sub" style="margin:0">Search anyone on fomo, check their trades, and copy them in one click.</div></div>
-    ${signed ? `<div class="row small muted">${avatar(me?.avatar, me?.name, 'xs')}<span>Signed in to fomo as <b style="color:var(--text)">@${esc(me?.handle || me?.name)}</b></span></div>` : ''}
-  </div>
-  ${!signed ? fomoSignInCard() : ''}
-  <div class="card pad0" style="margin-top:${signed ? 0 : 16}px">
-    <div style="padding:18px 20px" class="row">
+  <div class="page-title">Add a trader</div>
+  <div class="page-sub">Paste the Solana wallet of anyone you want to copy. The bot watches it on-chain and mirrors their buys and sells.</div>
+  <div class="card">
+    <div class="row">
       <div class="search-wrap grow" style="max-width:none">
-        <span class="search-ico">${icon('search')}</span>
-        <input id="discQ" placeholder="${signed ? 'Search fomo users by name or @handle — or paste a Solana wallet' : 'Paste a Solana wallet address to copy it'}" value="${esc(d.q)}" autocomplete="off" spellcheck="false">
+        <span class="search-ico">${icon('wallet')}</span>
+        <input id="discQ" class="mono" placeholder="Paste a Solana wallet address" value="${esc(d.q)}" autocomplete="off" spellcheck="false">
       </div>
-      <button class="btn primary" id="discGo">Search</button>
+      <button class="btn primary" id="discGo">${icon('search')}View wallet</button>
     </div>
-    <div class="tabs">
-      <button class="${d.tab === 'leaderboard' ? 'on' : ''}" data-dtab="leaderboard">${'Leaderboard'}</button>
-      <button class="${d.tab === 'search' ? 'on' : ''}" data-dtab="search">Search results${d.results ? ` (${d.results.length})` : ''}</button>
-    </div>
-    <div id="discBody">${d.tab === 'leaderboard' ? leaderboardHtml() : searchHtml()}</div>
-  </div>`;
+    ${d.error ? `<div class="note warn" style="margin-top:14px">${icon('warn')}<div>${esc(d.error)}</div></div>` : ''}
+  </div>
+  <div class="grid g3" style="margin-top:16px">
+    <div class="stat"><div class="k">${icon('search')}1 · Get their wallet</div><div class="small muted" style="margin-top:8px;line-height:1.55">Copy the trader's full Solana address — from their fomo profile, or from one of their trades on Solscan.</div></div>
+    <div class="stat"><div class="k">${icon('activity')}2 · Check their trades</div><div class="small muted" style="margin-top:8px;line-height:1.55">Paste it above. You'll see what that wallet bought and sold recently, straight from the blockchain.</div></div>
+    <div class="stat"><div class="k">${icon('copy')}3 · Hit Copy trader</div><div class="small muted" style="margin-top:8px;line-height:1.55">Pick a fixed SOL amount or a % of their size. From then on every buy and sell is mirrored.</div></div>
+  </div>
+  ${S.targets.length ? `<div class="card pad0" style="margin-top:16px"><div class="card-h" style="padding:18px 20px 0"><h3>Wallets you copy</h3><a class="link" data-go="copying">Manage</a></div><div class="list" style="margin-top:6px">${S.targets.map(targetRow).join('')}</div></div>` : ''}`;
 };
 
-function fomoSignInCard() {
-  return `<div class="card" style="background:linear-gradient(120deg,#17154a,#12111a 60%);border-color:rgba(111,133,255,.25)">
-    <div class="row" style="align-items:flex-start;gap:16px">
-      <div class="server-ico" style="width:46px;height:46px;border-radius:14px">${icon('link')}</div>
-      <div class="grow">
-        <div style="font-weight:800;font-size:16px">Connect your fomo account</div>
-        <div class="muted" style="margin-top:4px;line-height:1.5">fomo only shows profiles and search to signed-in users. This opens fomo.family in Chrome/Edge — sign in any way you like, including Google. The window closes by itself once you're in, and the login stays on this PC. You can still copy any Solana wallet without signing in.</div>
-        <a class="small" id="fomoLoginApp" style="display:inline-block;margin-top:8px">Or sign in inside the app (Email, Apple, X)</a>
-      </div>
-      <button class="btn white" id="fomoLogin">${icon('ext')}Sign in with browser</button>
-    </div>
-  </div>`;
-}
-
-function userRow(u, extra = '') {
-  const copying = S.targets.find((t) => (u.id && t.fomoUserId === String(u.id)) || (u.address && t.address === u.address));
-  const ref = u.id != null ? String(u.id) : u.handle ? '@' + u.handle : null;
-  return `<div class="li click" ${ref ? `data-profile="${esc(ref)}"` : ''}>
-    ${extra}${avatar(u.avatar, u.name || u.handle)}
-    <div class="grow"><div class="name ellipsis">${esc(u.name)}${u.verified ? VERIFIED : ''}</div>
-    <div class="meta">${u.handle ? '@' + esc(u.handle) : ''}${u.followers != null ? ` · ${fmtAmt(u.followers).replace('.00', '')} followers` : ''}${u.address ? ` · ${short(u.address)}` : ''}</div></div>
-    ${u.pnl != null ? `<div class="right" style="margin-right:8px"><div class="num ${pnlClass(u.pnl)}" style="font-weight:800">${fmtUsd(u.pnl, true)}</div><div class="small faint">P&L</div></div>` : ''}
-    ${copying ? `<span class="badge ok">${icon('check', 'verified')}Copying</span>` : `<button class="btn primary sm" data-copyuser="${esc(ref || '')}">${icon('copy')}Copy</button>`}
-  </div>`;
-}
-
-function leaderboardHtml() {
+function runSearch(q) {
   const d = S.discover;
-  const chips = [['24h', '24h'], ['7d', '7 days'], ['30d', '30 days'], ['all-time', 'All time']].map(([k, l]) => `<button class="chip ${d.lbWindow === k ? 'on' : ''}" data-lbw="${k}">${l}</button>`).join('');
-  let body;
-  if (!S.fomo.signedIn) body = `<div class="empty"><div class="ico">${icon('trophy')}</div><h4>Top fomo traders</h4><p>Sign in to fomo to see the leaderboard of the most profitable traders right now.</p></div>`;
-  else if (d.lbError) body = `<div class="empty"><p>${esc(d.lbError)}</p><button class="btn ghost" id="lbRetry">${icon('refresh')}Retry</button></div>`;
-  else if (!d.lb) body = `<div class="loading"><span class="spinner"></span>Loading leaderboard…</div>`;
-  else if (!d.lb.length) body = `<div class="empty"><p>No leaderboard entries for this window.</p></div>`;
-  else body = `<div class="list">${d.lb.slice(0, 100).map((u, i) => userRow(u, `<span class="num faint" style="width:26px;text-align:center;font-weight:800">${u.rank ?? i + 1}</span>`)).join('')}</div>`;
-  return `<div style="padding:14px 20px 4px" class="chips">${chips}</div>${body}`;
-}
-
-function searchHtml() {
-  const d = S.discover;
-  if (d.loading) return `<div class="loading"><span class="spinner"></span>Searching…</div>`;
-  if (d.error) return `<div class="empty"><p>${esc(d.error)}</p></div>`;
-  if (!d.results) return `<div class="empty"><div class="ico">${icon('search')}</div><h4>Search fomo</h4><p>Type a name or @handle. Paste a Solana address to view and copy any wallet.</p></div>`;
-  if (!d.results.length) return `<div class="empty"><p>No traders found for “${esc(d.q)}”.</p></div>`;
-  return `<div class="list">${d.results.map((u) => userRow(u)).join('')}</div>`;
-}
-
-async function runSearch(q) {
-  const d = S.discover;
-  d.q = q.trim();
+  d.q = String(q || '').trim();
   if (!d.q) return;
-  if (isSolAddr(d.q)) { go('profile', { ref: 'wallet:' + d.q }); return; }
-  d.tab = 'search';
-  if (!S.fomo.signedIn) { d.results = null; d.error = 'Sign in to fomo to search users by name. You can paste a Solana wallet address without signing in.'; if (S.route === 'discover') render(); else go('discover'); return; }
-  d.loading = true; d.error = null;
-  if (S.route !== 'discover') go('discover'); else render();
-  try { d.results = await fomoCall('search', d.q); } catch (e) { d.error = e.message; d.results = null; }
-  d.loading = false;
-  if (S.route === 'discover') render();
-}
-
-async function loadLeaderboard() {
-  const d = S.discover;
-  if (!S.fomo.signedIn) return;
-  d.lb = null; d.lbError = null;
-  if (S.route === 'discover') render();
-  try { d.lb = await fomoCall('leaderboard', d.lbWindow); } catch (e) { d.lbError = e.message; }
-  if (S.route === 'discover') render();
+  if (isSolAddr(d.q)) { d.error = null; go('profile', { ref: 'wallet:' + d.q }); return; }
+  d.error = 'That doesn\'t look like a Solana wallet address. It should be 32–44 letters and numbers, like 7xKX…9fGh.';
+  if (S.route === 'discover') render(); else go('discover');
 }
 
 VIEW_BIND.discover = (root) => {
   const q = $('#discQ', root);
   q.addEventListener('keydown', (e) => { if (e.key === 'Enter') runSearch(q.value); });
+  q.addEventListener('paste', () => setTimeout(() => { if (isSolAddr(q.value)) runSearch(q.value); }, 0));
   $('#discGo', root).onclick = () => runSearch(q.value);
-  $$('[data-dtab]', root).forEach((b) => b.onclick = () => { S.discover.tab = b.dataset.dtab; render(); if (b.dataset.dtab === 'leaderboard' && !S.discover.lb) loadLeaderboard(); });
-  $$('[data-lbw]', root).forEach((b) => b.onclick = () => { S.discover.lbWindow = b.dataset.lbw; loadLeaderboard(); });
-  const r = $('#lbRetry', root); if (r) r.onclick = loadLeaderboard;
-  const fl = $('#fomoLogin', root); if (fl) fl.onclick = () => fomoLogin();
-  const fa = $('#fomoLoginApp', root); if (fa) fa.onclick = () => fomoLogin(true);
-  $$('[data-copyuser]', root).forEach((b) => b.onclick = async (e) => {
-    e.stopPropagation();
-    const ref = b.dataset.copyuser;
-    const all = [...(S.discover.results || []), ...(S.discover.lb || [])];
-    let u = all.find((x) => String(x.id) === ref || '@' + x.handle === ref);
-    if (!u || !u.address) {
-      b.innerHTML = '<span class="spinner sm"></span>';
-      try { u = (await fomoCall('profile', ref)).user; } catch (err) { toast(err.message, 'error'); render(); return; }
-    }
-    openCopyModal(u);
-  });
-  if (S.discover.tab === 'leaderboard' && S.fomo.signedIn && !S.discover.lb && !S.discover.lbError) loadLeaderboard();
+  bindTargetToggles(root);
 };
 
-let fomoLoginBusy = false;
-async function fomoLogin(inApp = false) {
-  if (fomoLoginBusy) return;
-  fomoLoginBusy = true;
-  $$('#fomoLogin').forEach((b) => { b.disabled = true; b.innerHTML = '<span class="spinner sm"></span>Waiting for sign-in…'; });
-  toast(inApp === true ? 'Sign in on the fomo window (Email, Apple or X)' : 'Sign in to fomo in the browser window that opened — it closes by itself when you\'re in', 'info', 8000);
-  const r = inApp === true ? await bot.fomo.login() : await bot.fomo.loginBrowser();
-  fomoLoginBusy = false;
-  if (r && r.error) {
-    toast(r.error, 'error', 8000);
-  } else {
-    S.fomo = { signedIn: !!r.signedIn, me: r.me || null, checked: true };
-    if (r.signedIn) { toast(`Signed in to fomo as @${r.me?.handle || r.me?.name}`, 'success'); S.discover.lb = null; }
-    else toast('Not signed in to fomo', 'warn');
-  }
-  render();
-}
-
-// ---------- PROFILE ----------
+// ---------- WALLET PROFILE ----------
 const profileCache = new Map();
 VIEWS.profile = () => {
   const ref = S.params.ref;
   const p = profileCache.get(ref);
-  if (!p) { setTimeout(() => loadProfile(ref), 0); return `<div class="loading"><span class="spinner"></span>Loading profile…</div>`; }
-  if (p.error) return `<button class="btn ghost sm" data-go="discover">${icon('arrowL')}Back</button><div class="empty"><div class="ico">${icon('warn')}</div><h4>Couldn't load this profile</h4><p>${esc(p.error)}</p>${p.code === 'FOMO_AUTH' ? `<button class="btn white" id="fomoLogin">Sign in to fomo</button>` : ''}</div>`;
+  if (!p) { setTimeout(() => loadProfile(ref), 0); return `<div class="loading"><span class="spinner"></span>Loading wallet…</div>`; }
   const u = p.user;
-  const copying = S.targets.find((t) => (u.id && t.fomoUserId === String(u.id)) || (u.address && t.address === u.address));
-  const tab = S.params.tab || 'trades';
-  const solBal = p.balances.filter((b) => !b.networkId || b.networkId === 1399811149);
-  const otherChains = p.balances.length - solBal.length;
-  const cover = safeUrl(u.cover);
+  const copying = S.targets.find((t) => t.address === u.address);
   return `
   <button class="btn ghost sm" data-go="discover" style="margin-bottom:12px">${icon('arrowL')}Back</button>
   <div class="card pad0">
-    <div class="cover" ${cover ? `style="background-image:url('${esc(cover)}')"` : ''}></div>
+    <div class="cover" style="height:110px"></div>
     <div class="prof">
       <div class="row" style="align-items:flex-end">
         ${avatar(u.avatar, u.name, 'lg')}
         <div class="grow"></div>
-        ${u.address ? `<div class="addr-chip">${SOL_ICON.replace('class="sol"', 'style="width:15px;height:15px"')}<span class="mono">${short(u.address, 5)}</span><button data-copytext="${esc(u.address)}" title="Copy address">${icon('clip')}</button><button data-open="https://solscan.io/account/${esc(u.address)}" title="View on Solscan">${icon('ext')}</button></div>` : ''}
+        <div class="addr-chip">${SOL_ICON.replace('class="sol"', 'style="width:15px;height:15px"')}<span class="mono">${short(u.address, 5)}</span><button data-copytext="${esc(u.address)}" title="Copy address">${icon('clip')}</button><button data-open="https://solscan.io/account/${esc(u.address)}" title="View on Solscan">${icon('ext')}</button></div>
         ${copying
           ? `<button class="btn ghost" id="editCopy">${icon('gear')}Copy settings</button><button class="btn ${copying.enabled ? 'green' : 'ghost'}" id="toggleCopy">${copying.enabled ? icon('check') + 'Copying' : icon('play') + 'Resume'}</button>`
-          : `<button class="btn primary lg" id="startCopy" ${u.address ? '' : 'disabled'}>${icon('copy')}Copy trader</button>`}
+          : `<button class="btn primary lg" id="startCopy">${icon('copy')}Copy trader</button>`}
       </div>
-      <h2>${esc(u.name)}${u.verified ? VERIFIED.replace('class="verified"', 'class="verified" style="width:21px;height:21px"') : ''}</h2>
-      <div class="handle">${u.handle ? '@' + esc(u.handle) : p.wallet ? 'Solana wallet' : ''}${u.twitter ? ` · <a data-open="https://x.com/${esc(String(u.twitter).replace(/^@/, ''))}">𝕏 ${esc(u.twitter)}</a>` : ''}</div>
-      ${u.bio ? `<p class="bio">${esc(u.bio)}</p>` : ''}
+      <h2>${esc(u.name)}</h2>
+      <div class="handle mono">${esc(u.address)}</div>
       <div class="prof-stats">
-        ${u.pnl != null ? `<div><div class="k">P&L</div><div class="v ${pnlClass(u.pnl)}">${fmtUsd(u.pnl, true)}</div></div>` : ''}
-        ${p.balances.length ? `<div><div class="k">Holdings</div><div class="v">${fmtUsd(p.balances.reduce((a, b) => a + (b.usd || 0), 0))}</div></div>` : ''}
-        ${u.followers != null ? `<div><div class="k">Followers</div><div class="v">${fmtAmt(u.followers).replace('.00', '')}</div></div>` : ''}
-        ${u.volume != null ? `<div><div class="k">Volume</div><div class="v">${fmtUsd(u.volume)}</div></div>` : ''}
         ${p.swaps ? `<div><div class="k">Recent trades</div><div class="v">${p.swaps.length}</div></div>` : ''}
         ${copying ? `<div><div class="k">You copied</div><div class="v">${copying.stats?.copied || 0}</div></div>` : ''}
       </div>
-      ${!u.address ? `<div class="note warn" style="margin-top:16px">${icon('warn')}<div>This profile has no Solana wallet we can follow, so it can't be copied. Copy trading works on Solana.</div></div>` : ''}
     </div>
-    <div class="tabs">
-      <button class="${tab === 'trades' ? 'on' : ''}" data-ptab="trades">Trades</button>
-      <button class="${tab === 'holdings' ? 'on' : ''}" data-ptab="holdings">Holdings${p.balances.length ? ` (${p.balances.length})` : ''}</button>
-    </div>
-    ${tab === 'trades' ? profileTrades(p) : profileHoldings(p, otherChains)}
+    <div class="tabs"><button class="on">Recent trades</button></div>
+    ${profileTrades(p)}
   </div>`;
 };
 
 function profileTrades(p) {
   if (!p.swaps) return `<div class="loading"><span class="spinner"></span>Reading recent trades on-chain…</div>`;
-  if (!p.swaps.length) return `<div class="empty"><p>No recent trades found.</p></div>`;
-  return `<table class="t"><thead><tr><th>Token</th><th>Side</th><th class="r">Size</th><th class="r">Price</th><th class="r">When</th><th></th></tr></thead><tbody>
+  if (!p.swaps.length) return `<div class="empty"><p>No recent token trades found for this wallet. Double-check the address, or open it on Solscan.</p></div>`;
+  return `<table class="t"><thead><tr><th>Token</th><th>Side</th><th class="r">Size</th><th class="r">When</th><th></th></tr></thead><tbody>
   ${p.swaps.slice(0, 60).map((s) => `<tr>
-    <td><div class="row">${tokImg(s.icon, s.symbol, 'sm')}<div><div style="font-weight:700">${esc(s.symbol)}</div>${s.networkId && s.networkId !== 1399811149 ? `<span class="badge chain">${chainName(s.networkId)}</span>` : ''}</div></div></td>
+    <td><div class="row">${tokImg(s.icon, s.symbol, 'sm')}<div><div style="font-weight:700">${esc(s.symbol)}</div><div class="small faint ellipsis" style="max-width:220px">${esc(s.name || '')}</div></div></div></td>
     <td><span class="badge ${s.side}">${s.side.toUpperCase()}</span></td>
     <td class="r num">${s.sol ? fmtSol(s.sol) + ' SOL' : s.usd ? fmtUsd(s.usd) : '—'}<div class="small faint">${s.tokenAmount ? fmtAmt(s.tokenAmount) : ''}</div></td>
-    <td class="r num">${s.priceUsd ? '$' + Number(s.priceUsd).toPrecision(3) : '—'}</td>
-    <td class="r muted">${s.ts ? ago(s.ts) : ''}</td>
-    <td class="r">${s.tx && (!s.networkId || s.networkId === 1399811149) ? `<button class="icon-btn" data-open="https://solscan.io/tx/${esc(s.tx)}">${icon('ext')}</button>` : ''}</td>
+    <td class="r muted">${s.ts ? agoText(s.ts) : ''}</td>
+    <td class="r">${s.signature ? `<button class="icon-btn" data-open="https://solscan.io/tx/${esc(s.signature)}" title="View on Solscan">${icon('ext')}</button>` : ''}</td>
   </tr>`).join('')}</tbody></table>`;
 }
 
-function profileHoldings(p, otherChains) {
-  if (!p.balances.length) return `<div class="empty"><p>${p.wallet ? 'Holdings are shown for fomo profiles. Open the wallet on Solscan to see all tokens.' : 'No holdings to show.'}</p></div>`;
-  return `<table class="t"><thead><tr><th>Token</th><th class="r">Amount</th><th class="r">Value</th><th class="r">P&L</th></tr></thead><tbody>
-  ${p.balances.map((b) => `<tr><td><div class="row">${tokImg(b.icon, b.symbol, 'sm')}<div><div style="font-weight:700">${esc(b.symbol)}</div><div class="small faint">${esc(b.name)}${b.networkId && b.networkId !== 1399811149 ? ' · ' + chainName(b.networkId) : ''}</div></div></div></td>
-  <td class="r num">${fmtAmt(b.amount)}</td><td class="r num">${fmtUsd(b.usd)}</td><td class="r num ${pnlClass(b.pnl)}">${b.pnl != null ? fmtUsd(b.pnl, true) : '—'}${b.pnlPct != null ? `<div class="small">${fmtPct(b.pnlPct)}</div>` : ''}</td></tr>`).join('')}
-  </tbody></table>${otherChains ? `<div class="small faint" style="padding:12px 20px">${otherChains} holding(s) on other chains. Copy trading mirrors Solana trades.</div>` : ''}`;
-}
-
-function chainName(id) { return { 8453: 'Base', 56: 'BNB', 143: 'Monad', 1: 'Ethereum', 1337: 'Hyperliquid' }[id] || 'Chain ' + id; }
-
-const profileLoading = new Set();
-async function loadProfile(ref) {
-  if (profileLoading.has(ref)) return;
-  profileLoading.add(ref);
-  try {
-    let data;
-    if (ref.startsWith('wallet:')) {
-      const address = ref.slice(7);
-      const t = S.targets.find((x) => x.address === address);
-      data = {
-        wallet: true,
-        user: { name: t?.name || short(address, 5), handle: t?.handle, avatar: t?.avatar, address, id: t?.fomoUserId || null },
-        balances: [],
-        swaps: null,
-      };
-      GET(`/api/wallet-activity/${address}?limit=15`).catch(() => []).then((swaps) => {
-        data.swaps = swaps.map((x) => ({ ...x, priceUsd: null, usd: x.usd || null }));
-        if (S.route === 'profile' && S.params.ref === ref) render();
-      });
-    } else {
-      data = await fomoCall('profile', ref);
-      // Older fomo targets may only have an id stored; fill in the address from the profile.
-      if (!data.user.address) {
-        const t = S.targets.find((x) => x.fomoUserId === String(data.user.id));
-        if (t) data.user.address = t.address;
-      }
-    }
-    profileCache.set(ref, data);
-  } catch (e) {
-    profileCache.set(ref, { error: e.message, code: e.code });
-    setTimeout(() => profileCache.delete(ref), 1000);
-  }
-  profileLoading.delete(ref);
+function loadProfile(ref) {
+  if (profileCache.has(ref)) return;
+  const address = ref.replace(/^wallet:/, '');
+  const t = S.targets.find((x) => x.address === address);
+  const data = { user: { name: t?.name || short(address, 5), avatar: t?.avatar, address }, swaps: null };
+  profileCache.set(ref, data);
   if (S.route === 'profile' && S.params.ref === ref) render();
+  GET(`/api/wallet-activity/${address}?limit=15`).catch(() => []).then((swaps) => {
+    data.swaps = swaps;
+    if (S.route === 'profile' && S.params.ref === ref) render();
+  });
 }
 
 VIEW_BIND.profile = (root) => {
   const p = profileCache.get(S.params.ref);
-  const fl = $('#fomoLogin', root); if (fl) fl.onclick = async () => { await fomoLogin(); profileCache.delete(S.params.ref); render(); };
-  if (!p || p.error) return;
-  $$('[data-ptab]', root).forEach((b) => b.onclick = () => { S.params.tab = b.dataset.ptab; render(); });
+  if (!p) return;
   const sc = $('#startCopy', root); if (sc) sc.onclick = () => openCopyModal(p.user);
-  const copying = S.targets.find((t) => (p.user.id && t.fomoUserId === String(p.user.id)) || (p.user.address && t.address === p.user.address));
+  const copying = S.targets.find((t) => t.address === p.user.address);
   const ec = $('#editCopy', root); if (ec) ec.onclick = () => openCopyModal(p.user, copying);
   const tc = $('#toggleCopy', root); if (tc) tc.onclick = async () => {
     try { await PUT(`/api/targets/${copying.id}`, { enabled: !copying.enabled }); await loadTargets(); render(); } catch (e) { toast(e.message, 'error'); }
@@ -672,6 +517,7 @@ function openCopyModal(u, existing) {
   modal(`
     <div class="row">${avatar(u.avatar, u.name, 'sm')}<div><h3>${existing ? 'Copy settings' : 'Copy ' + esc(u.name)}</h3><div class="small muted">${u.handle ? '@' + esc(u.handle) + ' · ' : ''}<span class="mono">${short(u.address, 5)}</span></div></div><button class="icon-btn x" data-close>${icon('x')}</button></div>
     <div class="body">
+      <div class="field"><label>Name (so you recognise them)</label><input class="input" id="cpName" value="${esc(existing ? u.name : '')}" placeholder="e.g. their fomo handle"></div>
       <div class="field"><span class="lbl">How much to buy when they buy</span>
         <div class="seg accent" id="szSeg"><button data-sz="fixed" class="${sizing === 'fixed' ? 'on' : ''}">Fixed amount</button><button data-sz="ratio" class="${sizing === 'ratio' ? 'on' : ''}">% of their size</button></div>
       </div>
@@ -702,7 +548,7 @@ function openCopyModal(u, existing) {
       upd();
       $('#cpSave', m).onclick = async () => {
         const body = {
-          address: u.address, name: u.name, handle: u.handle, avatar: u.avatar, fomoUserId: u.id != null ? String(u.id) : undefined,
+          address: u.address, name: $('#cpName', m).value.trim() || u.name, avatar: u.avatar,
           sizing, fixedSol: Number($('#fxSol', m).value), ratio: (Number($('#rtPct', m).value) || 0) / 100,
           maxSol: $('#mxSol', m).value === '' ? null : Number($('#mxSol', m).value),
           copyBuys: $('#cpBuy', m).checked, copySells: $('#cpSell', m).checked, enabled: true,
@@ -710,7 +556,8 @@ function openCopyModal(u, existing) {
         try {
           if (existing) await PUT(`/api/targets/${existing.id}`, body); else await POST('/api/targets', body);
           close();
-          toast(existing ? 'Copy settings saved' : `Now copying ${u.name}`, 'success');
+          toast(existing ? 'Copy settings saved' : `Now copying ${body.name}`, 'success');
+          profileCache.delete('wallet:' + u.address);
           await loadTargets();
           render();
         } catch (e) { toast(e.message, 'error'); }
@@ -729,14 +576,13 @@ VIEWS.copying = () => {
   return `
   <div class="row" style="align-items:flex-end;margin-bottom:18px">
     <div class="grow"><div class="page-title">Copying</div><div class="page-sub" style="margin:0">Traders whose buys and sells are mirrored into your wallet.</div></div>
-    <button class="btn ghost" id="addWallet">${icon('plus')}Copy a wallet</button>
-    <button class="btn primary" data-go="discover">${icon('search')}Find traders</button>
+    <button class="btn primary" data-go="discover">${icon('plus')}Add a trader</button>
   </div>
   <div class="card pad0">
-    ${!list.length ? `<div class="empty"><div class="ico">${icon('copy')}</div><h4>No traders yet</h4><p>Find a trader on fomo or paste any Solana wallet to start copying.</p><button class="btn primary" data-go="discover">Discover traders</button></div>` : `
+    ${!list.length ? `<div class="empty"><div class="ico">${icon('copy')}</div><h4>No traders yet</h4><p>Paste a trader's Solana wallet to start copying.</p><button class="btn primary" data-go="discover">${icon('plus')}Add a trader</button></div>` : `
     <table class="t"><thead><tr><th>Trader</th><th>Size</th><th>Copies</th><th class="r">Copied</th><th class="r">Skipped</th><th class="r">Last trade</th><th class="r">Status</th><th></th></tr></thead><tbody>
     ${list.map((t) => `<tr>
-      <td><div class="row click" style="cursor:pointer" data-profile="${esc(t.fomoUserId ? t.fomoUserId : 'wallet:' + t.address)}">${avatar(t.avatar, t.name, 'sm')}<div><div style="font-weight:700">${esc(t.name)}</div><div class="small muted">${t.handle ? '@' + esc(t.handle) + ' · ' : ''}<span class="mono">${short(t.address)}</span></div></div></div></td>
+      <td><div class="row click" style="cursor:pointer" data-profile="${esc('wallet:' + t.address)}">${avatar(t.avatar, t.name, 'sm')}<div><div style="font-weight:700">${esc(t.name)}</div><div class="small muted">${t.handle ? '@' + esc(t.handle) + ' · ' : ''}<span class="mono">${short(t.address)}</span></div></div></div></td>
       <td class="num">${t.sizing === 'ratio' ? Math.round(t.ratio * 100) + '% of theirs' : fmtSol(t.fixedSol ?? S.settings?.defaultBuySol) + ' SOL'}${t.maxSol ? `<div class="small faint">max ${fmtSol(t.maxSol)} SOL</div>` : ''}</td>
       <td>${t.copyBuys ? '<span class="badge buy">BUYS</span> ' : ''}${t.copySells ? '<span class="badge sell">SELLS</span>' : ''}</td>
       <td class="r num">${t.stats?.copied || 0}</td>
@@ -753,24 +599,8 @@ VIEW_BIND.copying = (root) => {
   bindTargetToggles(root);
   $$('[data-edit-target]', root).forEach((b) => b.onclick = () => {
     const t = S.targets.find((x) => x.id === b.dataset.editTarget);
-    openCopyModal({ address: t.address, name: t.name, handle: t.handle, avatar: t.avatar, id: t.fomoUserId }, t);
+    openCopyModal({ address: t.address, name: t.name, avatar: t.avatar }, t);
   });
-  $('#addWallet', root).onclick = () => modal(`
-    <div class="row"><h3>Copy a Solana wallet</h3><button class="icon-btn x" data-close>${icon('x')}</button></div>
-    <div class="body">
-      <div class="field"><label>Wallet address</label><input class="input mono" id="wAddr" placeholder="e.g. 7xKX…" spellcheck="false"></div>
-      <div class="field"><label>Nickname (optional)</label><input class="input" id="wName" placeholder="Whale #1"></div>
-    </div>
-    <div class="foot"><button class="btn ghost" data-close>Cancel</button><button class="btn primary" id="wNext">Continue</button></div>`,
-  { onMount: (m, close) => {
-    $('#wAddr', m).focus();
-    $('#wNext', m).onclick = () => {
-      const a = $('#wAddr', m).value.trim();
-      if (!isSolAddr(a)) { toast('That is not a valid Solana address', 'error'); return; }
-      close();
-      openCopyModal({ address: a, name: $('#wName', m).value.trim() || short(a, 5) });
-    };
-  } });
 };
 
 // ---------- PORTFOLIO ----------
@@ -883,7 +713,6 @@ VIEWS.settings = () => {
   const st = S.status || {};
   const s = S.settings || {};
   const c = S.conn;
-  const me = S.fomo.me;
   const num = (k, label, unit, hint, step = '0.01') => `<div class="field"><label>${label}</label><div class="input-wrap"><input class="input num" data-set="${k}" type="number" min="0" step="${step}" value="${esc(s[k] ?? '')}">${unit ? `<span class="unit">${unit}</span>` : ''}</div>${hint ? `<span class="hint">${hint}</span>` : ''}</div>`;
   return `
   <div class="page-title">Settings</div><div class="page-sub">Connection, wallet, and how the bot trades.</div>
@@ -914,12 +743,6 @@ VIEWS.settings = () => {
           <div class="muted small" style="line-height:1.55;margin-bottom:12px">The bot signs trades with this wallet. Use a fresh wallet just for copy trading. The key is encrypted on ${c.kind === 'local' ? 'this PC' : 'the server PC'} and never leaves it.</div>
           <div class="field"><label>Import private key</label><textarea class="input" id="pk" placeholder="Base58 private key (Phantom → Settings → Export private key) or JSON byte array" spellcheck="false"></textarea></div>
           <div class="row" style="margin-top:12px"><button class="btn primary" id="importPk">${icon('key')}Import wallet</button><span class="muted small">or</span><button class="btn ghost" id="genWallet">${icon('sparkle')}Create new wallet</button></div>`}
-      </div>
-
-      <div class="card">
-        <div class="card-h">${icon('link')}<h3>fomo account</h3></div>
-        ${S.fomo.signedIn ? `<div class="row">${avatar(me?.avatar, me?.name)}<div class="grow"><div style="font-weight:700">${esc(me?.name)}</div><div class="small muted">@${esc(me?.handle || '')} · used for search & profiles</div></div><button class="btn ghost sm" id="fomoLogout">${icon('logout')}Sign out</button></div>`
-          : `<div class="row"><div class="grow muted small" style="line-height:1.5">Sign in to search fomo users and view their profiles. Copying runs on-chain and keeps working without it.</div><button class="btn white sm" id="fomoLogin">Sign in</button></div>`}
       </div>
     </div>
 
@@ -1002,8 +825,6 @@ VIEW_BIND.settings = (root) => {
     if (!(await confirmModal({ title: 'Remove wallet?', body: 'The bot will forget this key and switch to paper mode. Your funds stay in the wallet — make sure you have the key backed up.', ok: 'Remove', danger: true }))) return;
     try { await DEL('/api/wallet'); SET.newSecret = null; await loadAll(); render(); } catch (e) { toast(e.message, 'error'); }
   });
-  b('fomoLogin', () => fomoLogin());
-  b('fomoLogout', async () => { await bot.fomo.logout(); S.fomo = { signedIn: false, me: null, checked: true }; S.discover.lb = null; render(); toast('Signed out of fomo'); });
   $$('[data-mode]', root).forEach((el) => el.onclick = async () => {
     const mode = el.dataset.mode;
     if (mode === S.status?.mode) return;
@@ -1109,6 +930,5 @@ bot.conn.onState((s) => { const was = S.conn.connected; S.conn = s; renderChrome
   render();
   await loadAll();
   render();
-  bot.fomo.status().then((r) => { S.fomo = { signedIn: !!r.signedIn, me: r.me || null, checked: true }; renderChrome(); if (['discover', 'settings'].includes(S.route)) render(); });
   setInterval(() => { loadStatus(); if (['home', 'portfolio'].includes(S.route)) loadPositions().then(() => { if (!$('#modal-root').firstChild && ['home', 'portfolio'].includes(S.route)) render(); }); }, 15000);
 })();

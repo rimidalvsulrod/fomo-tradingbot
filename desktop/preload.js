@@ -25,13 +25,4 @@ contextBridge.exposeInMainWorld('bot', {
     onState: on('conn:state'),
   },
   wallet: { import: inv('wallet:import'), generate: inv('wallet:generate') },
-  fomo: {
-    status: inv('fomo:status'),
-    login: inv('fomo:login'),
-    loginBrowser: inv('fomo:loginBrowser'),
-    logout: inv('fomo:logout'),
-    search: inv('fomo:search'),
-    leaderboard: inv('fomo:leaderboard'),
-    profile: inv('fomo:profile'),
-  },
 });
