@@ -1,7 +1,7 @@
 'use strict';
 // Fomo bridge: runs Fomo API calls inside a hidden fomo.family window so they use the user's own
 // signed-in session (Fomo requires login to search and view profiles). No credentials touch this app.
-const { BrowserWindow, session, shell } = require('electron');
+const { BrowserWindow, session, shell, dialog } = require('electron');
 
 const ORIGIN = 'https://fomo.family';
 const API = 'https://prod-api.fomo.family';
@@ -16,7 +16,6 @@ class FomoBridge {
     this.ready = null;
     this.me = null;
     this.ses = session.fromPartition(PARTITION);
-    this.ses.setUserAgent(this.ses.getUserAgent().replace(/\s*Electron\/[\d.]+/, '').replace(/\s*fomo-tradingbot\/[\d.]+/, ''));
   }
 
   _ensure() {
@@ -69,6 +68,20 @@ class FomoBridge {
         shell.openExternal(url);
         return { action: 'deny' };
       });
+      // Google doesn't allow its sign-in inside app windows; tell the user which methods work instead.
+      let warned = false;
+      const watchGoogle = (wc) => wc.on('did-navigate', (_e, url) => {
+        if (warned || !/accounts\.google\.com\/.*rejected/i.test(url)) return;
+        warned = true;
+        dialog.showMessageBox(w, {
+          type: 'info',
+          title: 'Google sign-in isn\'t available here',
+          message: 'Google doesn\'t allow signing in from inside apps.',
+          detail: 'Close the Google window and pick another option on the fomo login screen — Email (use the same address as your Google account), Apple, or X.',
+        });
+      });
+      watchGoogle(w.webContents);
+      w.webContents.on('did-create-window', (child) => watchGoogle(child.webContents));
       w.loadURL(ORIGIN + '/');
       let finished = false;
       const finish = async () => {

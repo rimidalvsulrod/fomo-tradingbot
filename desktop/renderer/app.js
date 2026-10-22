@@ -438,7 +438,7 @@ function fomoSignInCard() {
       <div class="server-ico" style="width:46px;height:46px;border-radius:14px">${icon('link')}</div>
       <div class="grow">
         <div style="font-weight:800;font-size:16px">Connect your fomo account</div>
-        <div class="muted" style="margin-top:4px;line-height:1.5">fomo only shows profiles and search to signed-in users. Sign in on fomo.family in a secure window — the login stays on this PC and is only used to look traders up. You can still copy any Solana wallet without signing in.</div>
+        <div class="muted" style="margin-top:4px;line-height:1.5">fomo only shows profiles and search to signed-in users. Sign in on fomo.family in a secure window — the login stays on this PC and is only used to look traders up. Use <b style="color:var(--text)">Email</b>, Apple or X: Google doesn't allow its sign-in inside apps. You can still copy any Solana wallet without signing in.</div>
       </div>
       <button class="btn white" id="fomoLogin">${icon('logout')}Sign in to fomo</button>
     </div>
@@ -524,7 +524,7 @@ VIEW_BIND.discover = (root) => {
 };
 
 async function fomoLogin() {
-  toast('Sign in on the fomo window that just opened');
+  toast('Sign in on the fomo window — use Email, Apple or X (Google sign-in isn\'t allowed in apps)', 'info', 7000);
   const r = await bot.fomo.login();
   S.fomo = { signedIn: !!r.signedIn, me: r.me || null, checked: true };
   if (r.signedIn) { toast(`Signed in to fomo as @${r.me?.handle || r.me?.name}`, 'success'); S.discover.lb = null; }
