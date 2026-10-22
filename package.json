@@ -1,6 +1,6 @@
 {
   "name": "fomo-tradingbot",
-  "version": "1.1.0",
+  "version": "1.1.1",
   "private": true,
   "description": "Copy-trade Fomo traders on Solana. Desktop app + 24/7 server.",
   "license": "MIT",
