@@ -20,17 +20,18 @@ Copy-trade [pump.fun](https://pump.fun) traders (or any Solana wallet). Paste a 
 
 ### Run it 24/7 on another PC
 
-1. Copy **FomoTradingbotServer.exe** to the spare PC and run it. Allow Windows Firewall access.
-2. Desktop app → **Settings → Find servers** → **Pair** → type the code shown in the server window.
-3. In the server window press **S** to start with Windows. It keeps the PC awake while it runs.
+1. Install the same app on the PC that stays on, and set it up there (wallet, traders).
+2. **Settings → Run 24/7**: starts with Windows in the tray, keeps the PC awake, keeps copying with the window closed.
+3. Optional: turn on **Let my other PCs connect**, then on your main PC use **Settings → Find computers** and enter the pairing code to control it remotely (same network).
 
-Both PCs must be on the same network for discovery and pairing. Server keys: `S` startup, `P` new pairing code, `T` show access token, `I` status, `O` data folder, `Q` quit. Flags: `--port 7420`, `--data <dir>`, `--allow-sleep`.
+`FomoTradingbotServer.exe` is still available as a headless alternative (console window, no UI). Server keys: `S` startup, `P` new pairing code, `T` show access token, `I` status, `O` data folder, `Q` quit. Flags: `--port 7420`, `--data <dir>`, `--allow-sleep`.
 
 ## How it works
 
 - **Signals:** the engine watches each copied wallet on-chain (RPC polling + websocket log triggers) and parses each transaction's balance changes into buy/sell legs — DEX-agnostic, works for pump.fun, Raydium, Meteora, Jupiter routes, etc.
 - **Execution:** swaps go through Jupiter Ultra (fallback: Jupiter Swap API + your RPC). Sells mirror the trader's sold fraction of their bag.
-- **Risk:** per-trader sizing, max per trade, daily SOL limit, reserve, max positions, buy-once-per-token, take-profit/stop-loss, stale-signal and dust filters.
+- **Modes:** copy a trader, or do the opposite (buy what they sell, sell what they buy).
+- **Risk:** per-trader sizing, max per trade, daily SOL limit, reserve, max positions, buy-once-per-token, take-profit / stop-loss / trailing stop (checked every few seconds while the bot runs, even when copying is paused), stale-signal and dust filters.
 - **No logins:** traders are added by pump.fun profile link or wallet address. Wallet pages show recent trades read straight from the blockchain.
 - **Keys:** the wallet key is AES-256-GCM encrypted at rest with a machine-local key. Wallet imports to a remote server are encrypted with a key derived from the pairing token.
 

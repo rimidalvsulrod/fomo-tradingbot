@@ -9,6 +9,7 @@ const { parseSwap, getParsedTx, keyStr } = require('../engine/solana');
 
 const BONK = 'DezXAZ8z7PnrnRJjz3wXBoRgixCa6xjnB7YaB1pPB263';
 const PUMP_AMM = 'pAMMBay6oceH9fJKBRHGP5D4bD4sWpmSwMn52FMfXEA';
+const PUMP_CURVE = '6EF8rrecthR5Dkzon8Nwu78hRvfCKubJ14M5uBEwF6P';
 
 let failed = 0;
 const ok = (name, cond, extra = '') => {
@@ -37,9 +38,14 @@ const ok = (name, cond, extra = '') => {
   const paired = await call('POST', '/api/pair', { pin: api.pin });
   ok('pair with correct pin returns token', paired.json && paired.json.token === token);
 
-  // Real swaps: pull recent pump AMM transactions and parse them from the fee payer's point of view.
+  // Real swaps: pull recent pump.fun transactions (bonding curve + AMM) and parse them from the fee payer's
+  // point of view. Many recent ones are failed bot transactions, so sample a wider window of successful ones.
   const conn = new Connection('https://api.mainnet-beta.solana.com', 'confirmed');
-  const sigs = await conn.getSignaturesForAddress(new PublicKey(PUMP_AMM), { limit: 12 });
+  const sigs = [];
+  for (const prog of [PUMP_CURVE, PUMP_AMM]) {
+    const list = await conn.getSignaturesForAddress(new PublicKey(prog), { limit: 60 });
+    sigs.push(...list.filter((s) => !s.err).slice(0, 8));
+  }
   let parsed = 0;
   let sample = null;
   for (const s of sigs) {
@@ -69,6 +75,33 @@ const ok = (name, cond, extra = '') => {
     engine.removeTarget(t.id);
   }
 
+  // Opposite mode: their sell → we buy, their buy → we sell our bag.
+  {
+    engine.settings.minSourceTradeSol = 0;
+    const inv = engine.addTarget({ address: 'So11111111111111111111111111111111111111112', name: 'Fade test', mode: 'inverse', fixedSol: 0.05 });
+    ok('opposite mode saved', inv.mode === 'inverse');
+    const leg = (side) => ({ side, mint: BONK, decimals: 5, deltaRaw: side === 'buy' ? 1000n : -1000n, preRaw: 2000n, fraction: side === 'sell' ? 0.5 : 0 });
+    await engine._handleSignal(inv, { signature: 'fade-sell', legs: [leg('sell')], solDelta: 0.4, stableDelta: 0 }, 1);
+    const held = engine.positions[BONK];
+    ok('opposite: their sell → we buy', !!held && engine.s.trades[0].side === 'buy' && engine.s.trades[0].status === 'success', engine.s.trades[0].reason || '');
+    await engine._handleSignal(inv, { signature: 'fade-buy', legs: [leg('buy')], solDelta: -0.4, stableDelta: 0 }, 1);
+    ok('opposite: their buy → we sell all', !engine.positions[BONK] && engine.s.trades[0].side === 'sell' && engine.s.trades[0].status === 'success', engine.s.trades[0].reason || '');
+    engine.removeTarget(inv.id);
+  }
+
+  // Trailing stop: a position that fell more than the trail below its best value gets sold.
+  {
+    const tok = await engine.jup.token(BONK);
+    await engine._executeBuy({ mint: BONK, tok, sol: 0.05, target: null, sourceSig: null, throwOnError: true });
+    const v = (await engine.positionsView()).find((p) => p.mint === BONK);
+    engine.positions[BONK].peakSol = v.valueSol * 1.2; // pretend it was 20% higher earlier
+    engine.settings.trailingStopPct = 10;
+    await engine._riskCheck();
+    await engine.queue;
+    ok('trailing stop sells after a 10%+ drop from peak', !engine.positions[BONK], engine.s.trades[0].reason || '');
+    engine.settings.trailingStopPct = 0;
+  }
+
   // Targets
   const add = await call('POST', '/api/targets', { address: payerOf(sigs) || '5Q544fKrFoe6tsEbD7S8EmxGTJYAKtTVhAW5Q5pge4j1', name: 'Test trader', sizing: 'fixed', fixedSol: 0.1 });
   ok('add target', add.status === 200 && add.json.id, add.json && add.json.error);
@@ -77,6 +110,7 @@ const ok = (name, cond, extra = '') => {
   ok('update target', upd.json.sizing === 'ratio' && upd.json.ratio === 0.25 && upd.json.copySells === false);
 
   // Paper trading through Jupiter quotes
+  const bonkBefore = engine.s.trades.filter((t) => t.status === 'success' && t.mint === BONK).length;
   const buy = await call('POST', '/api/buy', { mint: BONK, sol: 0.2 });
   ok('paper buy request', buy.status === 200, buy.json && buy.json.error);
   const pos = await call('GET', '/api/positions');
@@ -88,7 +122,7 @@ const ok = (name, cond, extra = '') => {
   const bonk2 = (pos2.json || []).find((p) => p.mint === BONK);
   ok('position halved', bonk2 && Math.abs(bonk2.amount / bonk.amount - 0.5) < 0.01);
   const trades = await call('GET', '/api/trades');
-  ok('trades recorded', trades.json.filter((t) => t.status === 'success' && t.mint === BONK).length === 2);
+  ok('trades recorded', trades.json.filter((t) => t.status === 'success' && t.mint === BONK).length === bonkBefore + 2);
   const st2 = await call('GET', '/api/status');
   ok('paper balance moved', st2.json.solBalance < 10 && st2.json.solBalance > 9.7, `${st2.json.solBalance.toFixed(4)} SOL`);
 

@@ -7,9 +7,9 @@ const { Connection, PublicKey } = require('@solana/web3.js');
 const { Store } = require('./store');
 const secure = require('./secure');
 const { Jupiter, SOL_MINT, sleep } = require('./jupiter');
-const { keypairFromSecret, tokenBalanceRaw, parseSwap, getParsedTx } = require('./solana');
+const { keypairFromSecret, tokenBalanceRaw, parseSwap, getParsedTx, keyStr } = require('./solana');
 
-const VERSION = '1.3.0';
+const VERSION = '1.4.0';
 
 const DEFAULT_SETTINGS = {
   mode: 'paper', // 'paper' simulates fills with live quotes; 'live' signs real transactions
@@ -30,11 +30,13 @@ const DEFAULT_SETTINGS = {
   buyOncePerToken: false,
   takeProfitPct: 0,
   stopLossPct: 0,
+  trailingStopPct: 0,
   paperStartSol: 10,
 };
 
 const DEFAULT_TARGET = {
   enabled: true,
+  mode: 'copy', // 'copy' | 'inverse' (do the opposite of the trader)
   sizing: 'fixed', // 'fixed' | 'ratio'
   fixedSol: null, // null = settings.defaultBuySol
   ratio: 0.1,
@@ -69,6 +71,7 @@ class Engine extends EventEmitter {
     this.subs = new Map();
     this.pollNow = new Set();
     this.polling = new Set();
+    this.exiting = new Set();
     this.status = { rpcOk: null, lastPollAt: 0, lastError: null, solBalance: null };
     this.jup = new Jupiter(() => this.settings, this.logger());
     this._loadWallet();
@@ -149,7 +152,7 @@ class Engine extends EventEmitter {
     this._log('info', `Engine v${VERSION} started (${this.mode === 'live' ? 'LIVE trading' : 'paper trading'})`);
     this._loop();
     this.balanceTimer = setInterval(() => this.refreshBalance(), 30000);
-    this.riskTimer = setInterval(() => this._riskCheck().catch(() => {}), 20000);
+    this.riskTimer = setInterval(() => this._riskCheck().catch(() => {}), 8000);
     this.refreshBalance();
   }
 
@@ -284,24 +287,42 @@ class Engine extends EventEmitter {
       this.status.rpcOk = false;
       this.status.lastError = 'RPC: ' + e.message;
     }
-    const delay = this.status.rpcOk === false ? Math.max(10000, this.settings.pollMs) : this.settings.pollMs;
+    // Live websocket pushes are the fast path; while every target has one, polling is only a backstop,
+    // which also keeps the free RPC's rate limit free for the transaction lookups that matter.
+    const enabled = this.s.targets.filter((t) => t.enabled);
+    const allPushed = enabled.length > 0 && enabled.every((t) => this.subs.has(t.id));
+    let delay = allPushed ? Math.max(this.settings.pollMs, 12000) : this.settings.pollMs;
+    if (this.status.rpcOk === false) delay = Math.max(10000, delay);
     this._schedule(delay);
   }
 
   _ensureSubscription(t) {
     if (this.subs.has(t.id)) return;
     try {
-      const subId = this.connection.onLogs(new PublicKey(t.address), () => {
-        // A log mention means a fresh tx: poll right away instead of waiting for the next tick.
-        if (this.pollNow.has(t.id)) return;
-        this.pollNow.add(t.id);
-        setTimeout(() => {
-          this.pollNow.delete(t.id);
-          this._pollTarget(t).catch(() => {});
-        }, 400);
+      // The push carries the transaction signature, so it can be fetched immediately (no extra history lookup).
+      const subId = this.connection.onLogs(new PublicKey(t.address), (ev) => {
+        if (!ev || ev.err || !ev.signature) return;
+        this._processSig(t, ev.signature, null, true).catch(() => {});
       }, 'confirmed');
       this.subs.set(t.id, { subId, conn: this.connection });
     } catch { /* websocket optional; polling continues */ }
+  }
+
+  async _processSig(t, signature, blockTime, fromPush = false) {
+    if (this.seen.has(signature)) return;
+    this.seen.add(signature);
+    if (this.seen.size > 5000) this.seen = new Set([...this.seen].slice(-2500));
+    let tx = null;
+    // A just-pushed transaction can take a moment to become fetchable.
+    for (let i = 0; i < (fromPush ? 6 : 1) && !tx; i++) {
+      if (i) await sleep(350);
+      tx = await getParsedTx(this.connection, signature).catch(() => null);
+    }
+    const swap = parseSwap(tx, t.address, signature);
+    if (!swap) return;
+    const bt = blockTime || tx.blockTime;
+    const age = bt ? Math.max(0, Date.now() / 1000 - bt) : 0;
+    this._enqueue(() => this._handleSignal(t, swap, age));
   }
 
   _unsubscribe(id) {
@@ -323,14 +344,8 @@ class Engine extends EventEmitter {
       this.store.save();
       if (!cursor) return; // first sight: start from now, don't replay history
       for (const sig of sigs.reverse()) {
-        if (sig.err || this.seen.has(sig.signature)) continue;
-        this.seen.add(sig.signature);
-        if (this.seen.size > 5000) this.seen = new Set([...this.seen].slice(-2500));
-        const age = sig.blockTime ? Date.now() / 1000 - sig.blockTime : 0;
-        const tx = await getParsedTx(this.connection, sig.signature);
-        const swap = parseSwap(tx, t.address, sig.signature);
-        if (!swap) continue;
-        this._enqueue(() => this._handleSignal(t, swap, age));
+        if (sig.err) continue;
+        await this._processSig(t, sig.signature, sig.blockTime);
       }
     } finally {
       this.polling.delete(t.id);
@@ -346,11 +361,13 @@ class Engine extends EventEmitter {
     const solPx = swap.stableDelta ? await this.jup.solPrice() : 0;
     const quoteSpentSol = -swap.solDelta + (solPx ? -swap.stableDelta / solPx : 0);
     const quoteGotSol = swap.solDelta + (solPx ? swap.stableDelta / solPx : 0);
+    const inverse = target.mode === 'inverse';
     for (const leg of swap.legs) {
       const tok = await this.jup.token(leg.mint);
       const label = `${target.name} ${leg.side === 'buy' ? 'bought' : 'sold'} $${tok.symbol}`;
       const sizeText = leg.side === 'buy' && quoteSpentSol > 0 ? ` for ${fmt(quoteSpentSol)} SOL` : leg.side === 'sell' ? ` (${Math.round(leg.fraction * 100)}% of bag)` : '';
-      this._log('info', label + sizeText, { kind: 'signal', mint: leg.mint, targetId: target.id, sig: swap.signature, icon: tok.icon });
+      const modeText = inverse ? (leg.side === 'buy' ? ' → opposite: sell' : ' → opposite: buy') : '';
+      this._log('info', label + sizeText + modeText, { kind: 'signal', mint: leg.mint, targetId: target.id, sig: swap.signature, icon: tok.icon });
       this.emit('event', { type: 'signal', targetId: target.id, mint: leg.mint, side: leg.side });
 
       const skip = (reason) => {
@@ -360,13 +377,13 @@ class Engine extends EventEmitter {
       if (!this.settings.running) { skip('bot paused'); continue; }
       if (age > this.settings.maxSignalAgeSec) { skip(`signal too old (${Math.round(age)}s)`); continue; }
 
-      if (leg.side === 'buy') {
-        if (!target.copyBuys) { skip('buys disabled for this trader'); continue; }
-        await this._copyBuy(target, leg, tok, Math.max(0, quoteSpentSol), swap.signature, skip);
-      } else {
-        if (!target.copySells) { skip('sells disabled for this trader'); continue; }
-        await this._copySell(target, leg, tok, Math.max(0, quoteGotSol), swap.signature, skip);
-      }
+      if (leg.side === 'buy' && !target.copyBuys) { skip('their buys are switched off for this trader'); continue; }
+      if (leg.side === 'sell' && !target.copySells) { skip('their sells are switched off for this trader'); continue; }
+      // Opposite mode: their sell → you buy (sized off what they got), their buy → you sell your bag.
+      const act = inverse ? (leg.side === 'buy' ? 'sell' : 'buy') : leg.side;
+      const theirSol = leg.side === 'buy' ? quoteSpentSol : quoteGotSol;
+      if (act === 'buy') await this._copyBuy(target, leg, tok, Math.max(0, theirSol), swap.signature, skip);
+      else await this._copySell(target, leg, tok, Math.max(0, theirSol), swap.signature, skip, inverse);
     }
     this._changed('targets');
   }
@@ -399,11 +416,11 @@ class Engine extends EventEmitter {
     await this._executeBuy({ mint: leg.mint, tok, sol: size, target, sourceSig, decimals: leg.decimals });
   }
 
-  async _copySell(target, leg, tok, theirGotSol, sourceSig, skip) {
+  async _copySell(target, leg, tok, theirSol, sourceSig, skip, inverse = false) {
     const pos = this.positions[leg.mint];
-    if (!pos) return skip('not holding this token');
-    const fraction = leg.fraction >= 0.95 || leg.fraction === 0 ? 1 : leg.fraction;
-    await this._executeSell({ mint: leg.mint, tok, fraction, target, sourceSig, reason: 'copy' });
+    if (!pos) return skip(inverse ? 'you don\'t hold this token, so there\'s nothing to sell' : 'not holding this token');
+    const fraction = inverse || leg.fraction >= 0.95 || leg.fraction === 0 ? 1 : leg.fraction;
+    await this._executeSell({ mint: leg.mint, tok, fraction, target, sourceSig, reason: inverse ? 'opposite' : 'copy' }).catch(() => {});
   }
 
   async _mintDecimals(mint) {
@@ -495,7 +512,11 @@ class Engine extends EventEmitter {
       this.s.realized[this.mode] += pnl;
       const remaining = held - amount;
       if (remaining <= 0n || soldFrac >= 0.999) delete this.positions[mint];
-      else { pos.amountRaw = remaining.toString(); pos.costSol -= costPart; }
+      else {
+        pos.amountRaw = remaining.toString();
+        pos.costSol -= costPart;
+        if (pos.peakSol) pos.peakSol *= 1 - soldFrac;
+      }
       if (target) { target.stats.copied = (target.stats.copied || 0) + 1; target.stats.lastTradeAt = Date.now(); }
       const tokens = Number(amount) / 10 ** pos.decimals;
       this._recordTrade({ ...base, status: 'success', sol: solOut, tokenAmount: tokens, pnlSol: pnl, txSig: signature, route });
@@ -529,17 +550,29 @@ class Engine extends EventEmitter {
   }
 
   async _riskCheck() {
-    const { takeProfitPct: tp, stopLossPct: sl } = this.settings;
-    if (!(tp > 0 || sl > 0) || !this.settings.running) return;
+    const { takeProfitPct: tp, stopLossPct: sl, trailingStopPct: tr } = this.settings;
+    // Exit protections stay on even while copying is paused.
+    if (!(tp > 0 || sl > 0 || tr > 0)) return;
     const list = await this.positionsView();
+    let peaksMoved = false;
     for (const p of list) {
-      if (p.pnlPct == null) continue;
-      if ((tp > 0 && p.pnlPct >= tp) || (sl > 0 && p.pnlPct <= -sl)) {
-        const why = p.pnlPct >= 0 ? `take-profit +${tp}%` : `stop-loss -${sl}%`;
-        this._log('warn', `$${p.symbol} hit ${why} — selling`);
-        this._enqueue(() => this._executeSell({ mint: p.mint, fraction: 1, reason: why }).catch(() => {}));
+      const pos = this.positions[p.mint];
+      if (!pos || p.valueSol == null || this.exiting.has(p.mint)) continue;
+      let why = null;
+      if (tr > 0) {
+        // Trailing stop: remember the best value the position reached and exit if it falls tr% below it.
+        const peak = Math.max(pos.peakSol || pos.costSol, p.valueSol);
+        if (peak !== pos.peakSol) { pos.peakSol = peak; peaksMoved = true; }
+        if (p.valueSol <= peak * (1 - tr / 100)) why = `trailing stop (-${tr}% from its best of ${fmt(peak)} SOL)`;
       }
+      if (!why && p.pnlPct != null && tp > 0 && p.pnlPct >= tp) why = `take-profit +${tp}%`;
+      if (!why && p.pnlPct != null && sl > 0 && p.pnlPct <= -sl) why = `stop-loss -${sl}%`;
+      if (!why) continue;
+      this.exiting.add(p.mint);
+      this._log('warn', `$${p.symbol} hit ${why} — selling`);
+      this._enqueue(() => this._executeSell({ mint: p.mint, fraction: 1, reason: why }).catch(() => {}).finally(() => this.exiting.delete(p.mint)));
     }
+    if (peaksMoved) this.store.save();
   }
 
   _recordTrade(t) {
@@ -619,16 +652,25 @@ class Engine extends EventEmitter {
     return this.s.targets.map((t) => ({ ...t, watching: this.subs.has(t.id) }));
   }
 
+  // Recent trades for a wallet plus what else it was doing, so the UI can explain an empty result
+  // (e.g. a coin creator's wallet that only receives pump.fun fees and never signs a trade).
   async walletActivity(address, limit = 15) {
     const pk = new PublicKey(address);
-    const sigs = (await this.connection.getSignaturesForAddress(pk, { limit: Math.min(30, limit * 2) })).filter((x) => !x.err);
+    const sigs = (await this.connection.getSignaturesForAddress(pk, { limit: Math.min(40, limit * 4) })).filter((x) => !x.err);
     const out = [];
-    // Small batches: bigger bursts trip the free RPC's rate limit and end up slower after backoff.
-    for (let i = 0; i < sigs.length && out.length < limit; i += 2) {
-      const batch = sigs.slice(i, i + 2);
-      if (i) await sleep(250);
+    let scanned = 0;
+    let signed = 0;
+    const fast = !/api\.mainnet-beta\.solana\.com/.test(this.settings.rpcUrl);
+    const step = fast ? 8 : 2;
+    // Small batches on the free RPC: bigger bursts trip its rate limit and end up slower after backoff.
+    for (let i = 0; i < sigs.length && out.length < limit; i += step) {
+      const batch = sigs.slice(i, i + step);
+      if (i && !fast) await sleep(250);
       const txs = await Promise.all(batch.map((s) => getParsedTx(this.connection, s.signature).catch(() => null)));
       for (let j = 0; j < batch.length; j++) {
+        if (!txs[j]) continue;
+        scanned++;
+        if (txs[j].transaction.message.accountKeys.some((k) => keyStr(k) === address && k.signer)) signed++;
         const swap = parseSwap(txs[j], address, batch[j].signature);
         if (!swap) continue;
         for (const leg of swap.legs) {
@@ -641,7 +683,14 @@ class Engine extends EventEmitter {
         }
       }
     }
-    return out.slice(0, limit);
+    return { trades: out.slice(0, limit), scanned, signed, oldest: sigs.length ? (sigs[sigs.length - 1].blockTime || 0) * 1000 : null };
+  }
+
+  async testRpc(url) {
+    const c = new Connection(String(url || '').trim(), 'confirmed');
+    const t0 = Date.now();
+    await c.getSlot();
+    return { ok: true, ms: Date.now() - t0 };
   }
 }
 
@@ -651,6 +700,8 @@ function applyTargetPatch(t, p) {
   if ('copyBuys' in p) t.copyBuys = !!p.copyBuys;
   if ('copySells' in p) t.copySells = !!p.copySells;
   if (p.sizing === 'fixed' || p.sizing === 'ratio') t.sizing = p.sizing;
+  if (p.mode === 'copy' || p.mode === 'inverse') t.mode = p.mode;
+  if (!t.mode) t.mode = 'copy';
   for (const k of ['fixedSol', 'ratio', 'maxSol']) if (k in p && num(p[k]) !== undefined) t[k] = num(p[k]);
   if (t.ratio == null) t.ratio = DEFAULT_TARGET.ratio;
   for (const k of ['name', 'handle', 'avatar', 'fomoUserId']) if (p[k]) t[k] = String(p[k]);

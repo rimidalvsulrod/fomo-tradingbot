@@ -68,6 +68,9 @@ function startApi(engine, { host = '0.0.0.0', port = 7420, token, name = os.host
   route('GET', '/api/logs', () => engine.logs.slice(-300));
   route('GET', '/api/token/:mint', ({ params }) => engine.jup.token(params.mint));
   route('GET', '/api/wallet-activity/:address', ({ params, query }) => engine.walletActivity(params.address, Number(query.get('limit')) || 15));
+  route('POST', '/api/rpc/test', async ({ body }) => {
+    try { return await engine.testRpc(body.url); } catch (e) { throw err(400, `That RPC URL didn't work: ${e.message}`); }
+  });
 
   function fail(ip) {
     const f = failures.get(ip) || { n: 0, at: Date.now() };

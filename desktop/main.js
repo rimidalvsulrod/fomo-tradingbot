@@ -1,5 +1,5 @@
 'use strict';
-const { app, BrowserWindow, ipcMain, shell, Tray, Menu, nativeImage, clipboard, dialog } = require('electron');
+const { app, BrowserWindow, ipcMain, shell, Tray, Menu, nativeImage, clipboard, dialog, powerSaveBlocker } = require('electron');
 const path = require('path');
 const fs = require('fs');
 const os = require('os');
@@ -30,9 +30,18 @@ let ws = null;
 let wsTimer = null;
 let connState = { connected: false, kind: cfg.connection.kind, name: null, error: null };
 let connecting = null;
+let startHidden = process.argv.includes('--hidden');
 
 function loadCfg() {
-  const def = { connection: { kind: 'local', host: '', port: 7420, token: '', name: '' }, closeToTray: true, trayHintShown: false };
+  const def = {
+    connection: { kind: 'local', host: '', port: 7420, token: '', name: '' },
+    closeToTray: true,
+    trayHintShown: false,
+    run247: false, // start with Windows in the tray and keep the PC awake
+    lanAccess: false, // let other PCs connect to this app's engine with a pairing code
+    lanPort: 7420,
+    lanToken: '',
+  };
   try { return { ...def, ...JSON.parse(fs.readFileSync(cfgFile, 'utf8')), connection: { ...def.connection, ...JSON.parse(fs.readFileSync(cfgFile, 'utf8')).connection } }; } catch { return def; }
 }
 function saveCfg() { fs.mkdirSync(userData, { recursive: true }); fs.writeFileSync(cfgFile, JSON.stringify(cfg, null, 2)); }
@@ -41,12 +50,54 @@ function saveCfg() { fs.mkdirSync(userData, { recursive: true }); fs.writeFileSy
 async function startLocalEngine() {
   if (local) return local;
   const engine = new Engine({ dataDir: path.join(userData, 'engine') });
-  const token = secure.randomToken();
-  const api = startApi(engine, { host: '127.0.0.1', port: 0, token, pairing: false, discovery: false });
+  let api;
+  let token;
+  let lan = false;
+  if (cfg.lanAccess) {
+    // Same API the standalone server exposes, so another PC's app can pair with this one.
+    if (!cfg.lanToken) { cfg.lanToken = secure.randomToken(); saveCfg(); }
+    token = cfg.lanToken;
+    api = startApi(engine, { host: '0.0.0.0', port: cfg.lanPort || 7420, token, name: os.hostname() });
+    try { await api.ready; lan = true; } catch (e) {
+      await api.close().catch(() => {});
+      dlog('LAN access unavailable', e);
+      api = null;
+    }
+  }
+  if (!api) {
+    token = secure.randomToken();
+    api = startApi(engine, { host: '127.0.0.1', port: 0, token, pairing: false, discovery: false });
+  }
   const port = await api.ready;
   engine.start();
-  local = { engine, api, base: `http://127.0.0.1:${port}`, token };
+  engine.on('pin', (pin) => send('app:247', state247()));
+  local = { engine, api, base: `http://127.0.0.1:${port}`, token, lan, port };
   return local;
+}
+
+// ---------- 24/7 mode ----------
+let awakeId = null;
+function applyRun247() {
+  const on = !!cfg.run247;
+  if (app.isPackaged) app.setLoginItemSettings({ openAtLogin: on, args: on ? ['--hidden'] : [] });
+  if (on && awakeId === null) awakeId = powerSaveBlocker.start('prevent-app-suspension');
+  if (!on && awakeId !== null) { powerSaveBlocker.stop(awakeId); awakeId = null; }
+}
+
+function state247() {
+  const ips = [];
+  for (const [ifname, list] of Object.entries(os.networkInterfaces())) {
+    for (const a of list || []) if (a.family === 'IPv4' && !a.internal && !/^169\.254\./.test(a.address)) ips.push({ ifname, address: a.address });
+  }
+  return {
+    run247: !!cfg.run247,
+    lanAccess: !!cfg.lanAccess,
+    lanActive: !!(local && local.lan),
+    lanError: cfg.lanAccess && local && !local.lan ? `Port ${cfg.lanPort || 7420} is in use on this PC (is FomoTradingbotServer.exe running here too?)` : null,
+    port: local && local.lan ? local.port : cfg.lanPort || 7420,
+    pin: local && local.lan ? local.api.pin : null,
+    ips,
+  };
 }
 
 async function stopLocalEngine() {
@@ -175,7 +226,8 @@ function createWindow() {
   });
   win.removeMenu();
   win.loadFile(path.join(__dirname, 'renderer', 'index.html'));
-  win.once('ready-to-show', () => win.show());
+  // Started by Windows at sign-in (24/7 mode): stay in the tray until opened.
+  win.once('ready-to-show', () => { if (startHidden) { startHidden = false; return; } win.show(); });
   win.webContents.setWindowOpenHandler(({ url }) => { openExternal(url); return { action: 'deny' }; });
   win.webContents.on('will-navigate', (e, url) => { if (!url.startsWith('file:')) { e.preventDefault(); openExternal(url); } });
   win.on('close', (e) => {
@@ -237,6 +289,20 @@ function handle(ch, fn) {
 
 handle('app:info', () => ({ version: VERSION, platform: process.platform, closeToTray: cfg.closeToTray }));
 handle('app:setCloseToTray', (v) => { cfg.closeToTray = !!v; saveCfg(); return { ok: true }; });
+handle('app:247:get', () => state247());
+handle('app:247:set', async (patch = {}) => {
+  if ('run247' in patch) {
+    cfg.run247 = !!patch.run247;
+    if (cfg.run247) cfg.closeToTray = true;
+    applyRun247();
+  }
+  const lanChanged = 'lanAccess' in patch && !!patch.lanAccess !== !!cfg.lanAccess;
+  if ('lanAccess' in patch) cfg.lanAccess = !!patch.lanAccess;
+  saveCfg();
+  if (lanChanged && connState.kind === 'local') { await stopLocalEngine(); await connect(); }
+  return state247();
+});
+handle('app:247:newPin', () => { if (local && local.lan) local.api.newPin(); return state247(); });
 handle('app:open', (url) => { openExternal(url); return { ok: true }; });
 handle('app:copy', (text) => { clipboard.writeText(String(text)); return { ok: true }; });
 
@@ -317,6 +383,7 @@ app.whenReady().then(async () => {
   createWindow();
   try { createTray(); } catch (e) { dlog('tray failed', e); }
   setupUpdates();
+  applyRun247();
   try {
     await connect();
   } catch (e) {

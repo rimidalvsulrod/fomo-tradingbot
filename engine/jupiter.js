@@ -17,7 +17,8 @@ class Jupiter {
 
   // Spaces requests out so the free tier's rate limit isn't tripped.
   _slot() {
-    const gap = this.getSettings().jupiterApiKey ? 120 : 450;
+    // Free tier allows ~1 request/second; a (free) API key raises that a lot.
+    const gap = this.getSettings().jupiterApiKey ? 120 : 1050;
     const p = this.gate.then(() => sleep(gap));
     this.gate = p;
     return this.gate;
@@ -33,7 +34,15 @@ class Jupiter {
     if (key) headers['x-api-key'] = key;
     if (opts.body) headers['content-type'] = 'application/json';
     await this._slot();
-    const res = await fetchWithTimeout(this.base + pathname, { ...opts, headers }, opts.timeout || 15000);
+    let res;
+    try {
+      res = await fetchWithTimeout(this.base + pathname, { ...opts, headers }, opts.timeout || 20000);
+    } catch (e) {
+      // Timeouts and dropped connections happen now and then; a retry almost always goes through.
+      // Re-sending the same signed transaction to /execute is safe: it can only land once.
+      if (attempt < 2) { await sleep(400 * (attempt + 1)); return this._fetch(pathname, opts, attempt + 1); }
+      throw new Error(e.name === 'AbortError' ? 'Jupiter did not respond in time' : `can't reach Jupiter (${e.cause?.code || e.message})`);
+    }
     const text = await res.text();
     let json;
     try { json = JSON.parse(text); } catch { json = { error: text.slice(0, 200) }; }
@@ -75,7 +84,7 @@ class Jupiter {
     const need = [];
     for (const m of new Set(mints)) {
       const hit = this.priceCache.get(m);
-      if (hit && Date.now() - hit.at < 15e3) out[m] = hit.v;
+      if (hit && Date.now() - hit.at < 6e3) out[m] = hit.v;
       else need.push(m);
     }
     for (let i = 0; i < need.length; i += 50) {

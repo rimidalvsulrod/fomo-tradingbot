@@ -313,6 +313,8 @@ VIEWS.home = () => {
     </div>
   </div>
 
+  ${speedCard()}
+
   <div class="grid g4" style="margin-top:16px">
     <div class="stat"><div class="k">${icon('users')}Copying</div><div class="v">${active.length}<small>trader${active.length === 1 ? '' : 's'}</small></div></div>
     <div class="stat"><div class="k">${icon('pie')}Open positions</div><div class="v">${st.openPositions}</div></div>
@@ -370,7 +372,7 @@ function feedHtml() {
 function renderFeed() { const f = $('#feed'); if (f) { f.innerHTML = feedHtml(); bindView(f); } }
 
 function targetRow(t) {
-  const size = t.sizing === 'ratio' ? `${Math.round((t.ratio || 0) * 100)}% of their size` : `${fmtSol(t.fixedSol ?? S.settings?.defaultBuySol ?? 0)} SOL per buy`;
+  const size = (t.mode === 'inverse' ? 'Opposite · ' : '') + (t.sizing === 'ratio' ? `${Math.round((t.ratio || 0) * 100)}% of their size` : `${fmtSol(t.fixedSol ?? S.settings?.defaultBuySol ?? 0)} SOL per buy`);
   return `<div class="li click" data-profile="${esc('wallet:' + t.address)}">
     ${avatar(t.avatar, t.name)}
     <div class="grow"><div class="name ellipsis">${esc(t.name)}${t.handle ? ` <span class="muted" style="font-weight:500">@${esc(t.handle)}</span>` : ''}</div>
@@ -393,7 +395,43 @@ function bindTargetToggles(root) {
   });
 }
 
+// The free public RPC is rate-limited, which slows signals and wallet lookups. A free Helius key fixes that.
+function usingPublicRpc() { return /api\.mainnet-beta\.solana\.com/.test(S.settings?.rpcUrl || 'api.mainnet-beta.solana.com'); }
+function speedCard() {
+  let dismissed = false;
+  try { dismissed = localStorage.getItem('speedCardDismissed') === '1'; } catch { /* storage unavailable */ }
+  if (!S.settings || !usingPublicRpc() || dismissed) return '';
+  return `<div class="card" style="margin-top:16px;border-color:rgba(255,200,87,.3)">
+    <div class="row" style="align-items:flex-start;gap:14px">
+      <div class="server-ico" style="background:var(--yellow-bg);color:var(--yellow)">${icon('bolt')}</div>
+      <div class="grow">
+        <div style="font-weight:800">Copy trades faster</div>
+        <div class="small muted" style="margin:4px 0 12px;line-height:1.5">You're on the free shared Solana connection, which is rate-limited. A free Helius key makes the bot react faster and load wallets in seconds. <a data-open="https://dashboard.helius.dev/">Get a free key</a> (sign up, copy the API key), then paste it here.</div>
+        <div class="row"><input class="input mono grow" id="heliusKey" placeholder="Paste your Helius API key (or a full RPC URL)" spellcheck="false"><button class="btn primary" id="heliusSave">Connect</button></div>
+      </div>
+      <button class="icon-btn" id="speedDismiss" title="Hide">${icon('x')}</button>
+    </div>
+  </div>`;
+}
+
+async function connectRpc(raw) {
+  const v = String(raw || '').trim();
+  if (!v) return toast('Paste your Helius API key first', 'warn');
+  const url = /^https?:\/\//.test(v) ? v : `https://mainnet.helius-rpc.com/?api-key=${encodeURIComponent(v)}`;
+  try {
+    const t = await POST('/api/rpc/test', { url });
+    S.settings = await PUT('/api/settings', { rpcUrl: url, pollMs: 2000 });
+    toast(`Connected — ${t.ms} ms response. Copying is now faster.`, 'success');
+    profileCache.clear();
+    render();
+  } catch (e) { toast(e.message, 'error', 7000); }
+}
+
 VIEW_BIND.home = (root) => {
+  const hs = $('#heliusSave', root);
+  if (hs) hs.onclick = () => connectRpc($('#heliusKey', root).value);
+  const sd = $('#speedDismiss', root);
+  if (sd) sd.onclick = () => { try { localStorage.setItem('speedCardDismissed', '1'); } catch { /* ignore */ } render(); };
   const b = $('#heroRun', root);
   if (b) b.onclick = toggleRunning;
   bindTargetToggles(root);
@@ -468,7 +506,7 @@ VIEWS.profile = () => {
         <div class="addr-chip">${SOL_ICON.replace('class="sol"', 'style="width:15px;height:15px"')}<span class="mono">${short(u.address, 5)}</span><button data-copytext="${esc(u.address)}" title="Copy address">${icon('clip')}</button><button data-open="https://solscan.io/account/${esc(u.address)}" title="View on Solscan">${icon('ext')}</button></div>
         <button class="btn ghost" data-open="https://pump.fun/profile/${esc(u.address)}">${icon('ext')}pump.fun profile</button>
         ${copying
-          ? `<button class="btn ghost" id="editCopy">${icon('gear')}Copy settings</button><button class="btn ${copying.enabled ? 'green' : 'ghost'}" id="toggleCopy">${copying.enabled ? icon('check') + 'Copying' : icon('play') + 'Resume'}</button>`
+          ? `<button class="btn ghost" id="editCopy">${icon('gear')}Settings</button><button class="btn ${copying.enabled ? 'green' : 'ghost'}" id="toggleCopy">${copying.enabled ? icon('check') + (copying.mode === 'inverse' ? 'Doing opposite' : 'Copying') : icon('play') + 'Resume'}</button>`
           : `<button class="btn primary lg" id="startCopy">${icon('copy')}Copy trader</button>`}
       </div>
       <h2>${esc(u.name)}</h2>
@@ -489,7 +527,13 @@ function profileTrades(p) {
     return `<div class="loading" style="flex-direction:column"><div class="row"><span class="spinner"></span>Reading recent trades on-chain…</div>
       ${publicRpc ? `<div class="small faint" style="max-width:460px;text-align:center;line-height:1.5">This can take up to a minute on the free Solana connection. A free Helius RPC URL (Settings → Execution) makes it — and copying — much faster.</div>` : ''}</div>`;
   }
-  if (!p.swaps.length) return `<div class="empty"><p>No recent token trades found for this wallet. Double-check the address, or open it on Solscan.</p></div>`;
+  if (!p.swaps.length) {
+    const sc = p.scan || {};
+    const msg = sc.scanned >= 8 && sc.signed === 0
+      ? `This wallet didn't make any of its last ${sc.scanned} transactions itself — it's only receiving payments, usually pump.fun creator fees from people trading a coin it created. It looks like a coin creator, not an active trader, so there's nothing to copy yet. Pick someone from a coin's trades list instead.`
+      : `No trades in this wallet's last ${sc.scanned || 'few'} transactions${sc.oldest ? ` (back to ${new Date(sc.oldest).toLocaleString([], { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })})` : ''}. If you copy it anyway, the bot will act on its next trade.`;
+    return `<div class="empty"><div class="ico">${icon('info')}</div><p style="max-width:520px">${esc(msg)}</p></div>`;
+  }
   return `<table class="t"><thead><tr><th>Token</th><th>Side</th><th class="r">Size</th><th class="r">When</th><th></th></tr></thead><tbody>
   ${p.swaps.slice(0, 60).map((s) => `<tr>
     <td><div class="row" style="cursor:pointer" data-open="${esc(tokenUrl(s.mint))}" title="Open coin">${tokImg(s.icon, s.symbol, 'sm')}<div><div style="font-weight:700">${esc(s.symbol)}</div><div class="small faint ellipsis" style="max-width:220px">${esc(s.name || '')}</div></div></div></td>
@@ -508,7 +552,8 @@ function loadProfile(ref) {
   profileCache.set(ref, data);
   if (S.route === 'profile' && S.params.ref === ref) render();
   GET(`/api/wallet-activity/${address}?limit=10`).catch(() => []).then((swaps) => {
-    data.swaps = swaps;
+    data.swaps = Array.isArray(swaps) ? swaps : swaps.trades || [];
+    data.scan = Array.isArray(swaps) ? null : swaps;
     if (S.route === 'profile' && S.params.ref === ref) render();
   });
 }
@@ -530,19 +575,24 @@ function openCopyModal(u, existing) {
   const st = S.settings || {};
   const t = existing || S.targets.find((x) => x.address === u.address) || {};
   let sizing = t.sizing || 'fixed';
+  let mode = t.mode || 'copy';
   modal(`
-    <div class="row">${avatar(u.avatar, u.name, 'sm')}<div><h3>${existing ? 'Copy settings' : 'Copy ' + esc(u.name)}</h3><div class="small muted">${u.handle ? '@' + esc(u.handle) + ' · ' : ''}<span class="mono">${short(u.address, 5)}</span></div></div><button class="icon-btn x" data-close>${icon('x')}</button></div>
+    <div class="row">${avatar(u.avatar, u.name, 'sm')}<div><h3>${existing ? 'Trader settings' : 'Follow ' + esc(u.name)}</h3><div class="small muted">${u.handle ? '@' + esc(u.handle) + ' · ' : ''}<span class="mono">${short(u.address, 5)}</span></div></div><button class="icon-btn x" data-close>${icon('x')}</button></div>
     <div class="body">
       <div class="field"><label>Name (so you recognise them)</label><input class="input" id="cpName" value="${esc(existing ? u.name : '')}" placeholder="e.g. their pump.fun name"></div>
-      <div class="field"><span class="lbl">How much to buy when they buy</span>
+      <div class="field"><span class="lbl">Mode</span>
+        <div class="seg accent" id="mdSeg"><button data-md="copy" class="${mode === 'copy' ? 'on' : ''}">Copy them</button><button data-md="inverse" class="${mode === 'inverse' ? 'on' : ''}">Do the opposite</button></div>
+        <span class="hint" id="mdHint"></span>
+      </div>
+      <div class="field"><span class="lbl" id="szLbl">How much to buy when they buy</span>
         <div class="seg accent" id="szSeg"><button data-sz="fixed" class="${sizing === 'fixed' ? 'on' : ''}">Fixed amount</button><button data-sz="ratio" class="${sizing === 'ratio' ? 'on' : ''}">% of their size</button></div>
       </div>
       <div class="field" id="fxField"><label>SOL per buy</label><div class="input-wrap"><input class="input num" id="fxSol" type="number" min="0" step="0.01" value="${t.fixedSol ?? st.defaultBuySol ?? 0.05}"><span class="unit">SOL</span></div></div>
-      <div class="field hide" id="rtField"><label>Percent of their trade size</label><div class="input-wrap"><input class="input num" id="rtPct" type="number" min="1" max="1000" step="1" value="${Math.round((t.ratio ?? 0.1) * 100)}"><span class="unit">%</span></div><span class="hint">They buy 2 SOL at 10% → you buy 0.2 SOL.</span></div>
+      <div class="field hide" id="rtField"><label>Percent of their trade size</label><div class="input-wrap"><input class="input num" id="rtPct" type="number" min="1" max="1000" step="1" value="${Math.round((t.ratio ?? 0.1) * 100)}"><span class="unit">%</span></div><span class="hint" id="rtHint"></span></div>
       <div class="field"><label>Max SOL per trade (optional)</label><div class="input-wrap"><input class="input num" id="mxSol" type="number" min="0" step="0.01" placeholder="Global max: ${st.maxTradeSol ?? '—'} SOL" value="${t.maxSol ?? ''}"><span class="unit">SOL</span></div></div>
       <div>
-        <div class="toggle-row"><div class="grow"><div class="t">Copy buys</div><div class="d">Buy the same token when they buy</div></div><label class="switch"><input type="checkbox" id="cpBuy" ${t.copyBuys !== false ? 'checked' : ''}><span></span></label></div>
-        <div class="toggle-row"><div class="grow"><div class="t">Copy sells</div><div class="d">Sell the same share of your position when they sell</div></div><label class="switch"><input type="checkbox" id="cpSell" ${t.copySells !== false ? 'checked' : ''}><span></span></label></div>
+        <div class="toggle-row"><div class="grow"><div class="t">React to their buys</div><div class="d" id="buyDesc"></div></div><label class="switch"><input type="checkbox" id="cpBuy" ${t.copyBuys !== false ? 'checked' : ''}><span></span></label></div>
+        <div class="toggle-row"><div class="grow"><div class="t">React to their sells</div><div class="d" id="sellDesc"></div></div><label class="switch"><input type="checkbox" id="cpSell" ${t.copySells !== false ? 'checked' : ''}><span></span></label></div>
       </div>
       <div class="summary" id="cpSum"></div>
       ${S.status?.mode !== 'live' ? `<div class="note warn">${icon('info')}<div>You're in <b>paper mode</b> — trades are simulated with live prices. Switch to Live in Settings when you're ready.</div></div>` : `<div class="note danger">${icon('warn')}<div><b>Live mode.</b> Real SOL from your wallet will be spent when this trader buys.</div></div>`}
@@ -554,12 +604,26 @@ function openCopyModal(u, existing) {
         $('#fxField', m).classList.toggle('hide', sizing !== 'fixed');
         $('#rtField', m).classList.toggle('hide', sizing !== 'ratio');
         $$('[data-sz]', m).forEach((b) => b.classList.toggle('on', b.dataset.sz === sizing));
+        $$('[data-md]', m).forEach((b) => b.classList.toggle('on', b.dataset.md === mode));
+        const inv = mode === 'inverse';
+        const who = esc($('#cpName', m).value.trim() || u.name);
         const mx = Number($('#mxSol', m).value) || st.maxTradeSol;
         const buys = $('#cpBuy', m).checked, sells = $('#cpSell', m).checked;
         const sizeTxt = sizing === 'fixed' ? `<b>${fmtSol(Number($('#fxSol', m).value) || 0)} SOL</b>` : `<b>${Number($('#rtPct', m).value) || 0}%</b> of their SOL size`;
-        $('#cpSum', m).innerHTML = `${buys ? `When ${esc(u.name)} buys a token, you buy ${sizeTxt} (capped at ${fmtSol(mx)} SOL).` : 'Buys are not copied.'} ${sells ? 'When they sell, you sell the same percentage of your position.' : 'Sells are not copied — you manage exits yourself.'}`;
+        $('#mdHint', m).textContent = inv
+          ? 'Fade them: when they sell a coin you buy it, and when they buy a coin you hold you sell it.'
+          : 'Mirror them: buy when they buy, sell when they sell.';
+        $('#szLbl', m).textContent = inv ? 'How much to buy when they sell' : 'How much to buy when they buy';
+        $('#rtHint', m).textContent = inv ? 'They sell for 2 SOL at 10% → you buy 0.2 SOL.' : 'They buy 2 SOL at 10% → you buy 0.2 SOL.';
+        $('#buyDesc', m).textContent = inv ? 'When they buy a coin you hold, sell all of it' : 'Buy the same coin when they buy';
+        $('#sellDesc', m).textContent = inv ? 'When they sell a coin, buy it' : 'Sell the same share of your position when they sell';
+        $('#cpSum', m).innerHTML = inv
+          ? `${sells ? `When ${who} sells a coin, you buy ${sizeTxt} of it (capped at ${fmtSol(mx)} SOL).` : 'Their sells are ignored.'} ${buys ? 'When they buy a coin you hold, you sell all of it.' : 'Their buys are ignored.'}`
+          : `${buys ? `When ${who} buys a coin, you buy ${sizeTxt} (capped at ${fmtSol(mx)} SOL).` : 'Their buys are ignored.'} ${sells ? 'When they sell, you sell the same percentage of your position.' : 'Their sells are ignored — you manage exits yourself.'}`;
+        $('#cpSave', m).innerHTML = existing ? 'Save' : inv ? `${icon('refresh')}Start fading` : `${icon('copy')}Start copying`;
       };
       $$('[data-sz]', m).forEach((b) => b.onclick = () => { sizing = b.dataset.sz; upd(); });
+      $$('[data-md]', m).forEach((b) => b.onclick = () => { mode = b.dataset.md; upd(); });
       $$('input', m).forEach((i) => i.addEventListener('input', upd));
       upd();
       $('#cpSave', m).onclick = async () => {
@@ -567,12 +631,12 @@ function openCopyModal(u, existing) {
           address: u.address, name: $('#cpName', m).value.trim() || u.name, avatar: u.avatar,
           sizing, fixedSol: Number($('#fxSol', m).value), ratio: (Number($('#rtPct', m).value) || 0) / 100,
           maxSol: $('#mxSol', m).value === '' ? null : Number($('#mxSol', m).value),
-          copyBuys: $('#cpBuy', m).checked, copySells: $('#cpSell', m).checked, enabled: true,
+          copyBuys: $('#cpBuy', m).checked, copySells: $('#cpSell', m).checked, enabled: true, mode,
         };
         try {
           if (existing) await PUT(`/api/targets/${existing.id}`, body); else await POST('/api/targets', body);
           close();
-          toast(existing ? 'Copy settings saved' : `Now copying ${body.name}`, 'success');
+          toast(existing ? 'Settings saved' : mode === 'inverse' ? `Now doing the opposite of ${body.name}` : `Now copying ${body.name}`, 'success');
           profileCache.delete('wallet:' + u.address);
           await loadTargets();
           render();
@@ -600,7 +664,7 @@ VIEWS.copying = () => {
     ${list.map((t) => `<tr>
       <td><div class="row click" style="cursor:pointer" data-profile="${esc('wallet:' + t.address)}">${avatar(t.avatar, t.name, 'sm')}<div><div style="font-weight:700">${esc(t.name)}</div><div class="small muted">${t.handle ? '@' + esc(t.handle) + ' · ' : ''}<span class="mono">${short(t.address)}</span></div></div></div></td>
       <td class="num">${t.sizing === 'ratio' ? Math.round(t.ratio * 100) + '% of theirs' : fmtSol(t.fixedSol ?? S.settings?.defaultBuySol) + ' SOL'}${t.maxSol ? `<div class="small faint">max ${fmtSol(t.maxSol)} SOL</div>` : ''}</td>
-      <td>${t.copyBuys ? '<span class="badge buy">BUYS</span> ' : ''}${t.copySells ? '<span class="badge sell">SELLS</span>' : ''}</td>
+      <td>${t.mode === 'inverse' ? '<span class="badge blue">OPPOSITE</span> ' : ''}${t.copyBuys ? '<span class="badge buy">BUYS</span> ' : ''}${t.copySells ? '<span class="badge sell">SELLS</span>' : ''}</td>
       <td class="r num">${t.stats?.copied || 0}</td>
       <td class="r num muted">${t.stats?.skipped || 0}</td>
       <td class="r muted">${t.stats?.lastTradeAt ? agoText(t.stats.lastTradeAt) : '—'}</td>
@@ -741,10 +805,16 @@ VIEWS.settings = () => {
           <div class="grow"><div style="font-weight:700">${c.kind === 'local' ? 'This PC' : esc(c.name || 'Remote server')}</div><div class="small muted">${c.connected ? (c.kind === 'local' ? 'Engine runs inside this app. Closing the window keeps it in the tray.' : 'Connected — the server keeps copying even when this app is closed.') : esc(c.error || 'Connecting…')}</div></div>
           ${c.kind === 'remote' ? `<button class="btn ghost sm" id="useLocal">Use this PC</button>` : ''}
         </div>
-        <div class="sec-title">Run 24/7 on another PC</div>
-        <div class="muted small" style="line-height:1.55;margin-bottom:12px">Download <b style="color:var(--text)">FomoTradingbotServer.exe</b> on the other PC and run it. It shows a pairing code. Then find it here — both PCs need to be on the same network.</div>
-        <div class="row"><button class="btn primary" id="discoverBtn">${SET.discovering ? '<span class="spinner sm"></span>Searching…' : icon('search') + 'Find servers'}</button><button class="btn ghost" id="manualConn">Enter IP manually</button><button class="btn ghost" data-open="https://fomo-tradingbot.vercel.app/#server">${icon('ext')}Get the server</button></div>
-        ${SET.discovered ? `<div style="margin-top:14px">${SET.discovered.length ? SET.discovered.map((d) => `<div class="server-item"><div class="server-ico">${icon('server')}</div><div class="grow"><div style="font-weight:700">${esc(d.name)}</div><div class="small muted mono">${esc(d.host)}:${esc(d.port)} · v${esc(d.version)}</div></div><button class="btn primary sm" data-pair="${esc(d.host)}" data-port="${esc(d.port)}" data-name="${esc(d.name)}">Pair</button></div>`).join('') : `<div class="note warn">${icon('warn')}<div>No servers found. Make sure FomoTradingbotServer.exe is running on the other PC, both PCs are on the same Wi-Fi/LAN, and Windows Firewall allowed it (it asks the first time). Or use “Enter IP manually”.</div></div>`}</div>` : ''}
+        ${c.kind === 'local' && S.always ? `
+        <div class="sec-title">Run 24/7 on this PC</div>
+        <div class="toggle-row"><div class="grow"><div class="t">Run 24/7</div><div class="d">Starts with Windows (in the tray), keeps this PC awake, and keeps copying when you close the window. Turn this on for the PC that stays on.</div></div><label class="switch green"><input type="checkbox" id="sw247" ${S.always.run247 ? 'checked' : ''}><span></span></label></div>
+        <div class="toggle-row"><div class="grow"><div class="t">Let my other PCs connect</div><div class="d">Control this bot from the app on another PC on the same network. Windows may ask to allow it through the firewall — click Allow.</div></div><label class="switch"><input type="checkbox" id="swLan" ${S.always.lanAccess ? 'checked' : ''}><span></span></label></div>
+        ${S.always.lanError ? `<div class="note warn" style="margin-top:8px">${icon('warn')}<div>${esc(S.always.lanError)}</div></div>` : ''}
+        ${S.always.lanActive ? `<div class="server-item" style="margin-top:8px"><div class="server-ico">${icon('link')}</div><div class="grow"><div class="small muted">On your other PC: Settings → Find computers, or enter</div><div class="mono" style="margin-top:2px">${S.always.ips.map((i) => `${esc(i.address)}:${esc(S.always.port)}`).join(' · ') || 'no network found'}</div></div><div style="text-align:right"><div class="small muted">Pairing code</div><div class="num" style="font-size:22px;font-weight:800;letter-spacing:.12em">${esc(String(S.always.pin || '').replace(/(\d{3})(\d{3})/, '$1 $2'))}</div><a class="small" id="newPin">New code</a></div></div>` : ''}` : ''}
+        <div class="sec-title">${c.kind === 'local' ? 'Control a bot on another PC' : 'Switch computer'}</div>
+        <div class="muted small" style="line-height:1.55;margin-bottom:12px">If the bot runs on another PC (this app with “Let my other PCs connect” on, or FomoTradingbotServer.exe), find it here. Both PCs need to be on the same network.</div>
+        <div class="row"><button class="btn primary" id="discoverBtn">${SET.discovering ? '<span class="spinner sm"></span>Searching…' : icon('search') + 'Find computers'}</button><button class="btn ghost" id="manualConn">Enter IP manually</button></div>
+        ${SET.discovered ? `<div style="margin-top:14px">${SET.discovered.length ? SET.discovered.map((d) => `<div class="server-item"><div class="server-ico">${icon('server')}</div><div class="grow"><div style="font-weight:700">${esc(d.name)}</div><div class="small muted mono">${esc(d.host)}:${esc(d.port)} · v${esc(d.version)}</div></div><button class="btn primary sm" data-pair="${esc(d.host)}" data-port="${esc(d.port)}" data-name="${esc(d.name)}">Pair</button></div>`).join('') : `<div class="note warn">${icon('warn')}<div>Nothing found. Make sure the bot is running on the other PC (this app with “Let my other PCs connect” on, or FomoTradingbotServer.exe), both PCs are on the same Wi-Fi/LAN, and Windows Firewall allowed it (it asks the first time). Or use “Enter IP manually”.</div></div>`}</div>` : ''}
       </div>
 
       <div class="card">
@@ -781,6 +851,8 @@ VIEWS.settings = () => {
           ${num('maxOpenPositions', 'Max open positions', '', '', '1')}
           ${num('takeProfitPct', 'Auto take-profit', '%', '0 = off. Sells all at this gain.', '1')}
           ${num('stopLossPct', 'Auto stop-loss', '%', '0 = off. Sells all at this loss.', '1')}
+          ${num('trailingStopPct', 'Trailing stop', '%', '0 = off. Sells all if a coin falls this far below the best value it reached.', '1')}
+          <div class="field"><label>&nbsp;</label><div class="hint" style="line-height:1.5">Stops are checked every few seconds and stay on even when copying is paused — but only while the bot is running. Use the 24/7 server so they keep working when your PC is off.</div></div>
         </div>
         <div class="toggle-row" style="margin-top:8px"><div class="grow"><div class="t">Buy each token once</div><div class="d">Ignore repeat buys of a token you already hold</div></div><label class="switch"><input type="checkbox" data-set-bool="buyOncePerToken" ${s.buyOncePerToken ? 'checked' : ''}><span></span></label></div>
         <button class="btn primary" style="margin-top:12px" id="saveRisk">Save limits</button>
@@ -814,6 +886,21 @@ VIEW_BIND.settings = (root) => {
   const s = S.settings || {};
   const b = (id, fn) => { const el = $('#' + id, root); if (el) el.onclick = fn; };
   b('useLocal', async () => { S.conn = await bot.conn.useLocal(); await loadAll(); render(); toast('Running the engine on this PC'); });
+  const s247 = $('#sw247', root);
+  if (s247) s247.onchange = async () => {
+    S.always = await bot.always.set({ run247: s247.checked });
+    toast(s247.checked ? 'Running 24/7: starts with Windows and keeps this PC awake' : '24/7 mode off', 'success');
+    render();
+  };
+  const sLan = $('#swLan', root);
+  if (sLan) sLan.onchange = async () => {
+    sLan.disabled = true;
+    S.always = await bot.always.set({ lanAccess: sLan.checked });
+    await loadAll();
+    render();
+  };
+  b('newPin', async () => { S.always = await bot.always.newPin(); render(); });
+  if (!S.always) bot.always.get().then((a) => { S.always = a; if (S.route === 'settings') render(); });
   b('discoverBtn', async () => {
     SET.discovering = true; render();
     SET.discovered = await bot.conn.discover();
@@ -858,7 +945,7 @@ VIEW_BIND.settings = (root) => {
     $$('[data-set-bool]', root).forEach((el) => { if (fields.includes(el.dataset.setBool)) patch[el.dataset.setBool] = el.checked; });
     try { S.settings = await PUT('/api/settings', patch); toast('Settings saved', 'success'); render(); } catch (e) { toast(e.message, 'error'); }
   };
-  b('saveRisk', () => save(['defaultBuySol', 'maxTradeSol', 'dailyLimitSol', 'minReserveSol', 'minSourceTradeSol', 'maxOpenPositions', 'takeProfitPct', 'stopLossPct', 'buyOncePerToken']));
+  b('saveRisk', () => save(['defaultBuySol', 'maxTradeSol', 'dailyLimitSol', 'minReserveSol', 'minSourceTradeSol', 'maxOpenPositions', 'takeProfitPct', 'stopLossPct', 'trailingStopPct', 'buyOncePerToken']));
   b('saveExec', () => save(['router', 'slippageBps', 'maxPriorityFeeSol', 'maxSignalAgeSec', 'pollMs', 'paperStartSol', 'rpcUrl', 'jupiterApiKey']));
   const tt = $('#trayToggle', root); if (tt) tt.onchange = async () => { await bot.setCloseToTray(tt.checked); S.info.closeToTray = tt.checked; };
 };
@@ -934,6 +1021,7 @@ function renderUpdate(u) {
 }
 $('#updBtn').onclick = () => { $('#updBtn').innerHTML = '<span class="spinner sm"></span>Restarting…'; bot.update.install(); };
 bot.update.onState(renderUpdate);
+bot.always.onState((a) => { S.always = a; if (S.route === 'settings' && !$('#modal-root').firstChild) render(); });
 bot.update.state().then(renderUpdate);
 
 bot.onEvent(onEngineEvent);
