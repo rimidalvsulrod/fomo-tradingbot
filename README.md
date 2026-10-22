@@ -8,8 +8,8 @@ Copy-trade traders from the [fomo](https://fomo.family) app on Solana. Search an
 
 | Download | What it is |
 | --- | --- |
-| [FomoTradingbot.exe](https://github.com/rimidalvsulrod/fomo-tradingbot/releases/latest/download/FomoTradingbot.exe) | Desktop app (portable, no installer). Search fomo, manage copies, see positions. Can run the bot itself. |
-| [FomoTradingbotServer.exe](https://github.com/rimidalvsulrod/fomo-tradingbot/releases/latest/download/FomoTradingbotServer.exe) | Headless 24/7 engine for a spare PC. Pair the desktop app with it using a 6-digit code. |
+| [FomoTradingbot.exe](https://fomo-tradingbot.vercel.app/downloads/FomoTradingbot.exe) | Desktop app (portable, no installer). Search fomo, manage copies, see positions. Can run the bot itself. |
+| [FomoTradingbotServer.exe](https://fomo-tradingbot.vercel.app/downloads/FomoTradingbotServer.exe) | Headless 24/7 engine for a spare PC. Pair the desktop app with it using a 6-digit code. |
 
 ## Quick start
 
@@ -49,3 +49,10 @@ npm run build          # dist/FomoTradingbotServer.exe + dist/FomoTradingbot.exe
 Layout: `engine/` (copy-trading engine + HTTP/WS API), `server/` (24/7 console app), `desktop/` (Electron app), `web/` (Vercel site), `scripts/` (builds and tests).
 
 MIT License.
+
+## Deploy the website
+
+```bash
+mkdir -p web/downloads && cp dist/*.exe web/downloads/
+cd web && npx vercel deploy --prod
+```
