@@ -9,7 +9,7 @@ const secure = require('./secure');
 const { Jupiter, SOL_MINT, sleep } = require('./jupiter');
 const { keypairFromSecret, tokenBalanceRaw, parseSwap, getParsedTx } = require('./solana');
 
-const VERSION = '1.2.0';
+const VERSION = '1.3.0';
 
 const DEFAULT_SETTINGS = {
   mode: 'paper', // 'paper' simulates fills with live quotes; 'live' signs real transactions
@@ -623,8 +623,10 @@ class Engine extends EventEmitter {
     const pk = new PublicKey(address);
     const sigs = (await this.connection.getSignaturesForAddress(pk, { limit: Math.min(30, limit * 2) })).filter((x) => !x.err);
     const out = [];
-    for (let i = 0; i < sigs.length && out.length < limit; i += 6) {
-      const batch = sigs.slice(i, i + 6);
+    // Small batches: bigger bursts trip the free RPC's rate limit and end up slower after backoff.
+    for (let i = 0; i < sigs.length && out.length < limit; i += 2) {
+      const batch = sigs.slice(i, i + 2);
+      if (i) await sleep(250);
       const txs = await Promise.all(batch.map((s) => getParsedTx(this.connection, s.signature).catch(() => null)));
       for (let j = 0; j < batch.length; j++) {
         const swap = parseSwap(txs[j], address, batch[j].signature);

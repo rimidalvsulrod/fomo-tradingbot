@@ -8,6 +8,16 @@ const esc = (v) => String(v ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '
 const safeUrl = (u) => (typeof u === 'string' && /^https:\/\//.test(u) ? u : null);
 const short = (a, n = 4) => (a ? `${a.slice(0, n)}…${a.slice(-n)}` : '');
 const isSolAddr = (s) => /^[1-9A-HJ-NP-Za-km-z]{32,44}$/.test(String(s || '').trim());
+// Accepts a plain wallet or a profile/account link (pump.fun, Solscan, GMGN, Birdeye…). Coin links are rejected.
+function parseTraderInput(raw) {
+  const s = String(raw || '').trim();
+  if (isSolAddr(s)) return { address: s };
+  if (/pump\.fun\/(coin|advanced\/coin)\//i.test(s)) return { error: "That's a coin link, not a trader. On the coin page, click a trader's name in the trades list and copy their profile link instead." };
+  const m = s.match(/\/(?:profile|account|address|wallet|portfolio|user)\/([1-9A-HJ-NP-Za-km-z]{32,44})/i) || s.match(/[?&](?:address|wallet)=([1-9A-HJ-NP-Za-km-z]{32,44})/i);
+  if (m) return { address: m[1] };
+  return { error: "Couldn't find a wallet in that. Paste a pump.fun profile link (pump.fun/profile/…) or a Solana wallet address." };
+}
+const tokenUrl = (mint) => (/pump$/.test(mint) ? `https://pump.fun/coin/${mint}` : `https://dexscreener.com/solana/${mint}`);
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
 function fmtSol(n, d) {
@@ -315,7 +325,7 @@ VIEWS.home = () => {
       <div class="card pad0">
         <div class="card-h" style="padding:18px 20px 0"><h3>Traders you copy</h3><a class="link" data-go="copying">Manage</a></div>
         ${active.length || S.targets.length ? `<div class="list" style="margin-top:6px">${S.targets.slice(0, 6).map(targetRow).join('')}</div>` : `
-          <div class="empty"><div class="ico">${icon('copy')}</div><h4>You're not copying anyone yet</h4><p>Paste a trader's Solana wallet and hit Copy. Every buy and sell they make gets mirrored.</p><button class="btn primary" data-go="discover">${icon('plus')}Add a trader</button></div>`}
+          <div class="empty"><div class="ico">${icon('copy')}</div><h4>You're not copying anyone yet</h4><p>Paste a trader's pump.fun profile link or Solana wallet and hit Copy. Every buy and sell they make gets mirrored.</p><button class="btn primary" data-go="discover">${icon('plus')}Add a trader</button></div>`}
       </div>
       <div class="card pad0">
         <div class="card-h" style="padding:18px 20px 0"><h3>Top positions</h3><a class="link" data-go="portfolio">View all</a></div>
@@ -407,14 +417,14 @@ VIEWS.discover = () => {
     <div class="row">
       <div class="search-wrap grow" style="max-width:none">
         <span class="search-ico">${icon('wallet')}</span>
-        <input id="discQ" class="mono" placeholder="Paste a Solana wallet address" value="${esc(d.q)}" autocomplete="off" spellcheck="false">
+        <input id="discQ" class="mono" placeholder="Paste a pump.fun profile link or Solana wallet" value="${esc(d.q)}" autocomplete="off" spellcheck="false">
       </div>
       <button class="btn primary" id="discGo">${icon('search')}View wallet</button>
     </div>
     ${d.error ? `<div class="note warn" style="margin-top:14px">${icon('warn')}<div>${esc(d.error)}</div></div>` : ''}
   </div>
   <div class="grid g3" style="margin-top:16px">
-    <div class="stat"><div class="k">${icon('search')}1 · Get their wallet</div><div class="small muted" style="margin-top:8px;line-height:1.55">Copy the trader's full Solana address — from their fomo profile, or from one of their trades on Solscan.</div></div>
+    <div class="stat"><div class="k">${icon('search')}1 · Get their wallet</div><div class="small muted" style="margin-top:8px;line-height:1.55">On pump.fun, open a coin, click a trader's name in its trades, and copy their profile link. <a data-open="https://pump.fun">Open pump.fun</a></div></div>
     <div class="stat"><div class="k">${icon('activity')}2 · Check their trades</div><div class="small muted" style="margin-top:8px;line-height:1.55">Paste it above. You'll see what that wallet bought and sold recently, straight from the blockchain.</div></div>
     <div class="stat"><div class="k">${icon('copy')}3 · Hit Copy trader</div><div class="small muted" style="margin-top:8px;line-height:1.55">Pick a fixed SOL amount or a % of their size. From then on every buy and sell is mirrored.</div></div>
   </div>
@@ -425,15 +435,16 @@ function runSearch(q) {
   const d = S.discover;
   d.q = String(q || '').trim();
   if (!d.q) return;
-  if (isSolAddr(d.q)) { d.error = null; go('profile', { ref: 'wallet:' + d.q }); return; }
-  d.error = 'That doesn\'t look like a Solana wallet address. It should be 32–44 letters and numbers, like 7xKX…9fGh.';
+  const r = parseTraderInput(d.q);
+  if (r.address) { d.error = null; go('profile', { ref: 'wallet:' + r.address }); return; }
+  d.error = r.error;
   if (S.route === 'discover') render(); else go('discover');
 }
 
 VIEW_BIND.discover = (root) => {
   const q = $('#discQ', root);
   q.addEventListener('keydown', (e) => { if (e.key === 'Enter') runSearch(q.value); });
-  q.addEventListener('paste', () => setTimeout(() => { if (isSolAddr(q.value)) runSearch(q.value); }, 0));
+  q.addEventListener('paste', () => setTimeout(() => { if (parseTraderInput(q.value).address) runSearch(q.value); }, 0));
   $('#discGo', root).onclick = () => runSearch(q.value);
   bindTargetToggles(root);
 };
@@ -455,6 +466,7 @@ VIEWS.profile = () => {
         ${avatar(u.avatar, u.name, 'lg')}
         <div class="grow"></div>
         <div class="addr-chip">${SOL_ICON.replace('class="sol"', 'style="width:15px;height:15px"')}<span class="mono">${short(u.address, 5)}</span><button data-copytext="${esc(u.address)}" title="Copy address">${icon('clip')}</button><button data-open="https://solscan.io/account/${esc(u.address)}" title="View on Solscan">${icon('ext')}</button></div>
+        <button class="btn ghost" data-open="https://pump.fun/profile/${esc(u.address)}">${icon('ext')}pump.fun profile</button>
         ${copying
           ? `<button class="btn ghost" id="editCopy">${icon('gear')}Copy settings</button><button class="btn ${copying.enabled ? 'green' : 'ghost'}" id="toggleCopy">${copying.enabled ? icon('check') + 'Copying' : icon('play') + 'Resume'}</button>`
           : `<button class="btn primary lg" id="startCopy">${icon('copy')}Copy trader</button>`}
@@ -472,11 +484,15 @@ VIEWS.profile = () => {
 };
 
 function profileTrades(p) {
-  if (!p.swaps) return `<div class="loading"><span class="spinner"></span>Reading recent trades on-chain…</div>`;
+  if (!p.swaps) {
+    const publicRpc = /api\.mainnet-beta\.solana\.com/.test(S.settings?.rpcUrl || 'api.mainnet-beta.solana.com');
+    return `<div class="loading" style="flex-direction:column"><div class="row"><span class="spinner"></span>Reading recent trades on-chain…</div>
+      ${publicRpc ? `<div class="small faint" style="max-width:460px;text-align:center;line-height:1.5">This can take up to a minute on the free Solana connection. A free Helius RPC URL (Settings → Execution) makes it — and copying — much faster.</div>` : ''}</div>`;
+  }
   if (!p.swaps.length) return `<div class="empty"><p>No recent token trades found for this wallet. Double-check the address, or open it on Solscan.</p></div>`;
   return `<table class="t"><thead><tr><th>Token</th><th>Side</th><th class="r">Size</th><th class="r">When</th><th></th></tr></thead><tbody>
   ${p.swaps.slice(0, 60).map((s) => `<tr>
-    <td><div class="row">${tokImg(s.icon, s.symbol, 'sm')}<div><div style="font-weight:700">${esc(s.symbol)}</div><div class="small faint ellipsis" style="max-width:220px">${esc(s.name || '')}</div></div></div></td>
+    <td><div class="row" style="cursor:pointer" data-open="${esc(tokenUrl(s.mint))}" title="Open coin">${tokImg(s.icon, s.symbol, 'sm')}<div><div style="font-weight:700">${esc(s.symbol)}</div><div class="small faint ellipsis" style="max-width:220px">${esc(s.name || '')}</div></div></div></td>
     <td><span class="badge ${s.side}">${s.side.toUpperCase()}</span></td>
     <td class="r num">${s.sol ? fmtSol(s.sol) + ' SOL' : s.usd ? fmtUsd(s.usd) : '—'}<div class="small faint">${s.tokenAmount ? fmtAmt(s.tokenAmount) : ''}</div></td>
     <td class="r muted">${s.ts ? agoText(s.ts) : ''}</td>
@@ -491,7 +507,7 @@ function loadProfile(ref) {
   const data = { user: { name: t?.name || short(address, 5), avatar: t?.avatar, address }, swaps: null };
   profileCache.set(ref, data);
   if (S.route === 'profile' && S.params.ref === ref) render();
-  GET(`/api/wallet-activity/${address}?limit=15`).catch(() => []).then((swaps) => {
+  GET(`/api/wallet-activity/${address}?limit=10`).catch(() => []).then((swaps) => {
     data.swaps = swaps;
     if (S.route === 'profile' && S.params.ref === ref) render();
   });
@@ -517,7 +533,7 @@ function openCopyModal(u, existing) {
   modal(`
     <div class="row">${avatar(u.avatar, u.name, 'sm')}<div><h3>${existing ? 'Copy settings' : 'Copy ' + esc(u.name)}</h3><div class="small muted">${u.handle ? '@' + esc(u.handle) + ' · ' : ''}<span class="mono">${short(u.address, 5)}</span></div></div><button class="icon-btn x" data-close>${icon('x')}</button></div>
     <div class="body">
-      <div class="field"><label>Name (so you recognise them)</label><input class="input" id="cpName" value="${esc(existing ? u.name : '')}" placeholder="e.g. their fomo handle"></div>
+      <div class="field"><label>Name (so you recognise them)</label><input class="input" id="cpName" value="${esc(existing ? u.name : '')}" placeholder="e.g. their pump.fun name"></div>
       <div class="field"><span class="lbl">How much to buy when they buy</span>
         <div class="seg accent" id="szSeg"><button data-sz="fixed" class="${sizing === 'fixed' ? 'on' : ''}">Fixed amount</button><button data-sz="ratio" class="${sizing === 'ratio' ? 'on' : ''}">% of their size</button></div>
       </div>
@@ -579,7 +595,7 @@ VIEWS.copying = () => {
     <button class="btn primary" data-go="discover">${icon('plus')}Add a trader</button>
   </div>
   <div class="card pad0">
-    ${!list.length ? `<div class="empty"><div class="ico">${icon('copy')}</div><h4>No traders yet</h4><p>Paste a trader's Solana wallet to start copying.</p><button class="btn primary" data-go="discover">${icon('plus')}Add a trader</button></div>` : `
+    ${!list.length ? `<div class="empty"><div class="ico">${icon('copy')}</div><h4>No traders yet</h4><p>Paste a trader's pump.fun profile link or Solana wallet to start copying.</p><button class="btn primary" data-go="discover">${icon('plus')}Add a trader</button></div>` : `
     <table class="t"><thead><tr><th>Trader</th><th>Size</th><th>Copies</th><th class="r">Copied</th><th class="r">Skipped</th><th class="r">Last trade</th><th class="r">Status</th><th></th></tr></thead><tbody>
     ${list.map((t) => `<tr>
       <td><div class="row click" style="cursor:pointer" data-profile="${esc('wallet:' + t.address)}">${avatar(t.avatar, t.name, 'sm')}<div><div style="font-weight:700">${esc(t.name)}</div><div class="small muted">${t.handle ? '@' + esc(t.handle) + ' · ' : ''}<span class="mono">${short(t.address)}</span></div></div></div></td>
@@ -626,7 +642,7 @@ VIEWS.portfolio = () => {
     ${!ps.length ? `<div class="empty"><div class="ico">${icon('pie')}</div><h4>No open positions</h4><p>When a trader you copy buys, the position appears here with live P&L.</p></div>` : `
     <table class="t"><thead><tr><th>Token</th><th class="r">Amount</th><th class="r">Value</th><th class="r">Cost</th><th class="r">P&L</th><th>From</th><th class="r">Sell</th></tr></thead><tbody>
     ${ps.map((p) => `<tr>
-      <td><div class="row">${tokImg(p.icon, p.symbol)}<div><div style="font-weight:700">${esc(p.symbol)}</div><div class="small faint ellipsis" style="max-width:180px">${esc(p.name || '')}</div></div><button class="icon-btn" data-open="https://dexscreener.com/solana/${esc(p.mint)}" title="Chart">${icon('ext')}</button></div></td>
+      <td><div class="row">${tokImg(p.icon, p.symbol)}<div><div style="font-weight:700">${esc(p.symbol)}</div><div class="small faint ellipsis" style="max-width:180px">${esc(p.name || '')}</div></div><button class="icon-btn" data-open="${esc(tokenUrl(p.mint))}" title="Chart">${icon('ext')}</button></div></td>
       <td class="r num">${fmtAmt(p.amount)}</td>
       <td class="r num"><b>${fmtSol(p.valueSol)} SOL</b><div class="small faint">${fmtUsd(p.valueUsd)}</div></td>
       <td class="r num muted">${fmtSol(p.costSol)} SOL</td>
@@ -788,7 +804,7 @@ VIEWS.settings = () => {
       <div class="card">
         <div class="card-h">${icon('info')}<h3>App</h3><span class="muted small" style="margin-left:auto">v${esc(S.info.version || '')}</span></div>
         <div class="toggle-row"><div class="grow"><div class="t">Keep running in the tray</div><div class="d">Closing the window keeps the local engine copying</div></div><label class="switch"><input type="checkbox" id="trayToggle" ${S.info.closeToTray ? 'checked' : ''}><span></span></label></div>
-        <div class="small faint" style="margin-top:10px;line-height:1.5">Unofficial tool, not affiliated with Fomo Labs. Copy trading is risky — memecoins can go to zero in minutes. Nothing here is financial advice.</div>
+        <div class="small faint" style="margin-top:10px;line-height:1.5">Unofficial tool, not affiliated with Fomo Labs or pump.fun. Copy trading is risky — memecoins can go to zero in minutes. Nothing here is financial advice.</div>
       </div>
     </div>
   </div>`;

@@ -1,8 +1,8 @@
 # fomo tradingbot
 
-Copy-trade traders from the [fomo](https://fomo.family) app (or anyone else) on Solana. Paste a trader's Solana wallet, hit **Copy**, and every buy and sell they make is mirrored into your wallet within seconds.
+Copy-trade [pump.fun](https://pump.fun) traders (or any Solana wallet). Paste a trader's pump.fun profile link, hit **Copy**, and every buy and sell they make is mirrored into your wallet within seconds.
 
-> Unofficial tool — not affiliated with Fomo Labs. Copy trading memecoins is extremely risky. Not financial advice.
+> Unofficial tool — not affiliated with Fomo Labs or pump.fun. Copy trading memecoins is extremely risky. Not financial advice.
 
 **Website:** https://fomo-tradingbot.vercel.app
 
@@ -14,7 +14,7 @@ Copy-trade traders from the [fomo](https://fomo.family) app (or anyone else) on 
 ## Quick start
 
 1. Run **FomoTradingbot-Setup.exe** (SmartScreen: *More info → Run anyway*; it isn't code-signed). It installs in one click and updates itself from then on.
-2. **Add trader** → paste the trader's Solana wallet address. You'll see their recent on-chain trades.
+2. **Add trader** → paste a trader's pump.fun profile link (on pump.fun, click a name in any coin's trades). Solana wallets and Solscan/GMGN/Birdeye links work too. You'll see their recent on-chain trades.
 3. **Copy trader** → give them a name and choose a fixed SOL size or a % of their size.
 4. You start in **paper mode**: fills are simulated with live Jupiter quotes. When you're happy, go to **Settings → Trading wallet**, import or create a dedicated wallet, fund it, and switch to **Live**.
 
@@ -31,7 +31,7 @@ Both PCs must be on the same network for discovery and pairing. Server keys: `S`
 - **Signals:** the engine watches each copied wallet on-chain (RPC polling + websocket log triggers) and parses each transaction's balance changes into buy/sell legs — DEX-agnostic, works for pump.fun, Raydium, Meteora, Jupiter routes, etc.
 - **Execution:** swaps go through Jupiter Ultra (fallback: Jupiter Swap API + your RPC). Sells mirror the trader's sold fraction of their bag.
 - **Risk:** per-trader sizing, max per trade, daily SOL limit, reserve, max positions, buy-once-per-token, take-profit/stop-loss, stale-signal and dust filters.
-- **No fomo login:** traders are added by wallet address. Wallet pages show recent trades read straight from the blockchain.
+- **No logins:** traders are added by pump.fun profile link or wallet address. Wallet pages show recent trades read straight from the blockchain.
 - **Keys:** the wallet key is AES-256-GCM encrypted at rest with a machine-local key. Wallet imports to a remote server are encrypted with a key derived from the pairing token.
 
 Tip: the public Solana RPC is rate-limited. A free Helius/QuickNode RPC URL and a free Jupiter API key (Settings → Execution) make copying faster and more reliable.
