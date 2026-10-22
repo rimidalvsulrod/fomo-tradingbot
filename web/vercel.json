@@ -1,10 +1,10 @@
 {
   "cleanUrls": true,
+  "redirects": [
+    { "source": "/downloads/FomoTradingbot.exe", "destination": "https://github.com/rimidalvsulrod/fomo-tradingbot/releases/latest/download/FomoTradingbot-Setup.exe", "permanent": false },
+    { "source": "/downloads/FomoTradingbotServer.exe", "destination": "https://github.com/rimidalvsulrod/fomo-tradingbot/releases/latest/download/FomoTradingbotServer.exe", "permanent": false }
+  ],
   "headers": [
-    { "source": "/downloads/(.*)", "headers": [
-      { "key": "Content-Disposition", "value": "attachment" },
-      { "key": "Cache-Control", "value": "public, max-age=300" }
-    ] },
     { "source": "/img/(.*)", "headers": [ { "key": "Cache-Control", "value": "public, max-age=86400" } ] }
   ]
 }

@@ -8,12 +8,12 @@ Copy-trade traders from the [fomo](https://fomo.family) app on Solana. Search an
 
 | Download | What it is |
 | --- | --- |
-| [FomoTradingbot.exe](https://fomo-tradingbot.vercel.app/downloads/FomoTradingbot.exe) | Desktop app (portable, no installer). Search fomo, manage copies, see positions. Can run the bot itself. |
-| [FomoTradingbotServer.exe](https://fomo-tradingbot.vercel.app/downloads/FomoTradingbotServer.exe) | Headless 24/7 engine for a spare PC. Pair the desktop app with it using a 6-digit code. |
+| [FomoTradingbot-Setup.exe](https://github.com/rimidalvsulrod/fomo-tradingbot/releases/latest/download/FomoTradingbot-Setup.exe) | Desktop app (one-click install, updates itself). Search fomo, manage copies, see positions. Can run the bot itself. |
+| [FomoTradingbotServer.exe](https://github.com/rimidalvsulrod/fomo-tradingbot/releases/latest/download/FomoTradingbotServer.exe) | Headless 24/7 engine for a spare PC. Updates itself. Pair the desktop app with it using a 6-digit code. |
 
 ## Quick start
 
-1. Run **FomoTradingbot.exe** (SmartScreen: *More info → Run anyway*; the exe isn't code-signed).
+1. Run **FomoTradingbot-Setup.exe** (SmartScreen: *More info → Run anyway*; it isn't code-signed). It installs in one click and updates itself from then on.
 2. **Discover → Sign in to fomo** to search traders (fomo only shows profiles to signed-in users). Or paste any Solana wallet.
 3. Open a trader → **Copy trader** → choose a fixed SOL size or a % of their size.
 4. You start in **paper mode**: fills are simulated with live Jupiter quotes. When you're happy, go to **Settings → Trading wallet**, import or create a dedicated wallet, fund it, and switch to **Live**.
@@ -50,9 +50,11 @@ Layout: `engine/` (copy-trading engine + HTTP/WS API), `server/` (24/7 console a
 
 MIT License.
 
-## Deploy the website
+## Release
 
 ```bash
-mkdir -p web/downloads && cp dist/*.exe web/downloads/
-cd web && npx vercel deploy --prod
+npm run build
+gh release create vX.Y.Z dist/FomoTradingbot-Setup.exe dist/FomoTradingbot-Setup.exe.blockmap dist/latest.yml dist/FomoTradingbotServer.exe
 ```
+
+Installed apps and running servers pick up the new release automatically.
