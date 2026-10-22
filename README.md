@@ -4,7 +4,7 @@ Copy-trade [pump.fun](https://pump.fun) traders (or any Solana wallet). Paste a 
 
 > Unofficial tool — not affiliated with pump.fun or Fomo Labs. Copy trading memecoins is extremely risky. Not financial advice.
 
-**Website:** https://pumpfun-bot.vercel.app
+**Website:** https://pumpfun-bot-app.vercel.app
 
 | Download | What it is |
 | --- | --- |
