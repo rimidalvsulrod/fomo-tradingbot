@@ -1,0 +1,154 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Fomo Tradingbot — copy trade fomo traders on autopilot</title>
+  <meta name="description" content="Search any trader on fomo and mirror their Solana buys and sells within seconds. Windows desktop app plus a 24/7 server for a spare PC. Paper mode, risk limits, keys stay on your machine.">
+  <meta property="og:title" content="Fomo Tradingbot">
+  <meta property="og:description" content="Copy trade fomo traders on autopilot. Desktop app + 24/7 server.">
+  <meta property="og:image" content="/img/home.webp">
+  <meta name="theme-color" content="#060510">
+  <link rel="icon" href="/favicon.png">
+  <link rel="apple-touch-icon" href="/apple-touch-icon.png">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="/styles.css">
+</head>
+<body>
+  <header class="nav">
+    <div class="wrap nav-in">
+      <a href="/" class="logo"><img src="/img/icon.png" alt=""><span><b>fomo</b> tradingbot</span></a>
+      <nav class="links">
+        <a href="#features">Features</a>
+        <a href="#how">How it works</a>
+        <a href="#server">24/7 server</a>
+        <a href="#faq">FAQ</a>
+        <a href="https://github.com/rimidalvsulrod/fomo-tradingbot" target="_blank" rel="noopener">GitHub</a>
+      </nav>
+      <a class="btn primary sm" href="#download">Download</a>
+    </div>
+  </header>
+
+  <main>
+    <section class="hero">
+      <div class="glow"></div>
+      <div class="wrap hero-in">
+        <div class="pill"><span class="dot"></span>Windows · Solana · v1.0</div>
+        <h1>Copy the best traders<br>on <span class="grad">fomo</span>. Automatically.</h1>
+        <p class="lead">Search anyone on fomo, open their profile, hit <b>Copy</b>. Every buy and sell they make is mirrored into your wallet within seconds — with your sizing and your limits.</p>
+        <div class="cta" id="download">
+          <a class="btn white lg" href="https://github.com/rimidalvsulrod/fomo-tradingbot/releases/latest/download/FomoTradingbot.exe">
+            <svg viewBox="0 0 24 24"><path fill="currentColor" d="M3 5.5 10.5 4.4v7.1H3zm8.5-1.2L21 3v8.5h-9.5zM3 12.5h7.5v7.1L3 18.5zm8.5 0H21V21l-9.5-1.3z"/></svg>
+            Download for Windows
+          </a>
+          <a class="btn ghost lg" href="#server">Get the 24/7 server</a>
+        </div>
+        <div class="fine">Free · portable .exe, no installer · starts in paper mode</div>
+        <div class="shot-wrap">
+          <img class="shot" src="/img/home.webp" alt="Fomo Tradingbot dashboard showing portfolio, copied traders and live feed" width="1600" height="832">
+        </div>
+      </div>
+    </section>
+
+    <section class="strip">
+      <div class="wrap strip-in">
+        <div><b>~2–5s</b><span>signal to copy</span></div>
+        <div><b>On-chain</b><span>wallet watching</span></div>
+        <div><b>Jupiter</b><span>best-price routing</span></div>
+        <div><b>Local keys</b><span>encrypted on your PC</span></div>
+      </div>
+    </section>
+
+    <section id="features" class="wrap sec">
+      <div class="sec-h"><span class="eyebrow">Features</span><h2>Everything you need to follow the legends</h2></div>
+      <div class="grid3">
+        <article class="feat"><div class="ic">🔎</div><h3>Search fomo</h3><p>Sign in with your fomo account inside the app to search users, browse the 24h / 7d / 30d leaderboard and see anyone's trades and holdings.</p></article>
+        <article class="feat"><div class="ic">⚡</div><h3>Mirror buys &amp; sells</h3><p>The engine watches each trader's Solana wallet live. When they buy, you buy. When they sell 40% of a bag, you sell 40% of yours.</p></article>
+        <article class="feat"><div class="ic">🧪</div><h3>Paper mode first</h3><p>Every new install simulates trades with real Jupiter quotes. Watch a trader's real performance before you put a single SOL on the line.</p></article>
+        <article class="feat"><div class="ic">🛡️</div><h3>Risk limits</h3><p>Fixed SOL or % of their size, max per trade, daily spend cap, SOL reserve, max positions, auto take-profit and stop-loss.</p></article>
+        <article class="feat"><div class="ic">🖥️</div><h3>24/7 server</h3><p>Run FomoTradingbotServer.exe on a spare PC and the bot never sleeps. Pair your desktop app with a 6-digit code — no ports, no accounts.</p></article>
+        <article class="feat"><div class="ic">🔐</div><h3>Your keys stay home</h3><p>Use a dedicated trading wallet. Its key is encrypted on the machine that runs the bot, sent over the LAN encrypted, and never uploaded anywhere.</p></article>
+      </div>
+    </section>
+
+    <section id="how" class="wrap sec">
+      <div class="sec-h"><span class="eyebrow">How it works</span><h2>Three steps to autopilot</h2></div>
+      <div class="steps">
+        <div class="step"><span class="n">1</span><h3>Find a trader</h3><p>Search a name or @handle, or pick from the leaderboard. You can also paste any Solana wallet.</p><img src="/img/discover.webp" alt="Discover traders screen" loading="lazy"></div>
+        <div class="step"><span class="n">2</span><h3>Hit Copy</h3><p>Choose a fixed SOL amount or a % of their size, and whether to copy buys, sells or both.</p><img src="/img/copying.webp" alt="Copying screen with trader settings" loading="lazy"></div>
+        <div class="step"><span class="n">3</span><h3>Watch it trade</h3><p>Positions, live P&amp;L, and a full log of every signal — copied, skipped, or failed and why.</p><img src="/img/portfolio.webp" alt="Portfolio with live P&L" loading="lazy"></div>
+      </div>
+    </section>
+
+    <section class="wrap sec">
+      <div class="gallery">
+        <figure><img src="/img/activity.webp" alt="Activity log of copied trades" loading="lazy"><figcaption>Every signal, every decision</figcaption></figure>
+        <figure><img src="/img/profile.webp" alt="Trader profile" loading="lazy"><figcaption>Trader profiles with on-chain trades</figcaption></figure>
+      </div>
+    </section>
+
+    <section id="server" class="wrap sec">
+      <div class="server">
+        <div class="server-copy">
+          <span class="eyebrow">24/7 server</span>
+          <h2>Keep copying while you sleep</h2>
+          <p>Your PC goes to sleep, the trades don't. Put the server on any spare Windows PC on your network and leave it running. The desktop app becomes a remote control.</p>
+          <ol class="setup">
+            <li><b>Download</b> FomoTradingbotServer.exe on the spare PC and double-click it. Allow it through Windows Firewall when asked.</li>
+            <li><b>Pair:</b> in the desktop app go to Settings → <i>Find servers</i>, pick the PC and type the 6-digit code shown in the server window.</li>
+            <li><b>Set it and forget it:</b> press <kbd>S</kbd> in the server window to start it with Windows. It keeps the PC awake while it runs.</li>
+          </ol>
+          <div class="cta left">
+            <a class="btn primary lg" href="https://github.com/rimidalvsulrod/fomo-tradingbot/releases/latest/download/FomoTradingbotServer.exe">Download the server</a>
+            <a class="btn ghost lg" href="https://github.com/rimidalvsulrod/fomo-tradingbot/releases/latest" target="_blank" rel="noopener">All releases</a>
+          </div>
+        </div>
+        <div class="term" aria-label="Server window preview">
+          <div class="term-bar"><span></span><span></span><span></span><em>Fomo Tradingbot Server</em></div>
+<pre><span class="b">fomo</span> <b>tradingbot</b>  <span class="g">server v1.0.0</span>
+<span class="g">Copy-trading engine that keeps running 24/7.</span>
+
+<b>Connect the desktop app</b>
+<span class="g">Settings → Connection → "Find servers", or enter:</span>
+  <span class="b">192.168.1.50:7420</span>  <span class="g">(Ethernet)</span>
+<span class="g">Pairing code:</span> <b>482 913</b>
+<span class="g">Mode:</span> <span class="y">PAPER</span>   <span class="g">Traders:</span> 2/2
+
+<span class="g">21:14:02</span> • Pump wallet A bought $BONK for 1.2 SOL
+<span class="g">21:14:04</span> <span class="ok">✓ [paper] Bought 5.83M $BONK for 0.1 SOL</span>
+<span class="g">21:16:40</span> • Pump wallet A sold $BONK (30% of bag)
+<span class="g">21:16:42</span> <span class="ok">✓ [paper] Sold 30% $BONK for 0.0302 SOL</span></pre>
+        </div>
+      </div>
+    </section>
+
+    <section id="faq" class="wrap sec">
+      <div class="sec-h"><span class="eyebrow">FAQ</span><h2>Questions</h2></div>
+      <div class="faq">
+        <details><summary>Is this the official fomo app?</summary><p>No. Fomo Tradingbot is an independent, unofficial tool and is not affiliated with or endorsed by Fomo Labs. It uses your own fomo login (in a fomo.family window) only to look traders up.</p></details>
+        <details><summary>Do I need a fomo account?</summary><p>Only to search users and view fomo profiles — fomo shows those to signed-in users. Copying itself runs on-chain, so you can also copy any Solana wallet without signing in.</p></details>
+        <details><summary>Which chains are copied?</summary><p>Solana. That's where most fomo trading happens. Profiles show holdings on other chains too, but only Solana trades are mirrored.</p></details>
+        <details><summary>Where does my private key go?</summary><p>Nowhere. Import a dedicated trading wallet in Settings; the key is encrypted with a key unique to the machine running the bot. When you pair with a server, the key travels across your LAN encrypted with that pairing's secret.</p></details>
+        <details><summary>Windows says "Windows protected your PC".</summary><p>The .exe isn't code-signed yet, so SmartScreen warns on first launch. Click <b>More info → Run anyway</b>. The full source is on GitHub if you'd rather build it yourself.</p></details>
+        <details><summary>How fast are copies?</summary><p>Usually 2–5 seconds after the trader's transaction confirms. For best results add a free RPC URL (Helius, QuickNode) and a free Jupiter API key in Settings → Execution.</p></details>
+        <details><summary>Does the server PC need to be on the same network?</summary><p>For "Find servers" and pairing, yes — same Wi-Fi or LAN. The server keeps trading on its own whether or not the desktop app is open.</p></details>
+      </div>
+    </section>
+
+    <section class="wrap final">
+      <h2>Never miss a trade again.</h2>
+      <div class="cta">
+        <a class="btn white lg" href="https://github.com/rimidalvsulrod/fomo-tradingbot/releases/latest/download/FomoTradingbot.exe">Download for Windows</a>
+        <a class="btn ghost lg" href="https://github.com/rimidalvsulrod/fomo-tradingbot/releases/latest/download/FomoTradingbotServer.exe">Download the server</a>
+      </div>
+    </section>
+  </main>
+
+  <footer class="wrap foot">
+    <div class="logo small"><img src="/img/icon.png" alt=""><span><b>fomo</b> tradingbot</span></div>
+    <p>Unofficial tool. Not affiliated with Fomo Labs. Copy trading memecoins is extremely risky — you can lose everything you put in. Nothing here is financial advice. Open source under the MIT license.</p>
+  </footer>
+</body>
+</html>

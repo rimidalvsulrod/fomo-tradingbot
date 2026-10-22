@@ -1,0 +1,73 @@
+{
+  "name": "fomo-tradingbot",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Copy-trade Fomo traders on Solana. Desktop app + 24/7 server.",
+  "license": "MIT",
+  "main": "desktop/main.js",
+  "scripts": {
+    "start": "electron .",
+    "server": "node server/index.js",
+    "build:server": "node scripts/build-server.js",
+    "build:desktop": "electron-builder --win portable --publish never",
+    "build": "npm run build:server && npm run build:desktop",
+    "test": "node scripts/selftest.js"
+  },
+  "dependencies": {
+    "@solana/web3.js": "^1.99.0",
+    "bs58": "^6.0.0",
+    "ws": "^8.22.0"
+  },
+  "devDependencies": {
+    "electron": "^38.8.6",
+    "electron-builder": "^26.15.3",
+    "esbuild": "^0.28.2",
+    "postject": "^1.0.0-alpha.6",
+    "rcedit": "^4.0.1"
+  },
+  "allowScripts": {
+    "esbuild@0.28.2": true,
+    "electron-winstaller@5.4.0": true,
+    "utf-8-validate": false,
+    "bufferutil": false
+  },
+  "author": "Fomo Tradingbot",
+  "homepage": "https://github.com/rimidalvsulrod/fomo-tradingbot",
+  "build": {
+    "appId": "com.fomotradingbot.desktop",
+    "productName": "Fomo Tradingbot",
+    "directories": {
+      "output": "dist",
+      "buildResources": "assets"
+    },
+    "files": [
+      "desktop/**",
+      "engine/**",
+      "assets/icon.png",
+      "assets/icon.ico",
+      "package.json",
+      "!**/*.map",
+      "!node_modules/bufferutil/**",
+      "!node_modules/utf-8-validate/**"
+    ],
+    "asar": true,
+    "win": {
+      "target": [
+        {
+          "target": "portable",
+          "arch": [
+            "x64"
+          ]
+        }
+      ],
+      "icon": "assets/icon.ico",
+      "artifactName": "FomoTradingbot.exe",
+      "signAndEditExecutable": true
+    },
+    "portable": {
+      "artifactName": "FomoTradingbot.exe"
+    },
+    "compression": "normal",
+    "npmRebuild": false
+  }
+}

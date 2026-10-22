@@ -1,0 +1,41 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; img-src 'self' https: data:; style-src 'self' 'unsafe-inline'; font-src 'self'; script-src 'self'; connect-src 'none'">
+  <title>Fomo Tradingbot</title>
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+  <div id="app">
+    <aside class="sidebar">
+      <div class="brand drag">
+        <img src="../../assets/icon.png" alt="">
+        <div class="brand-text"><b>fomo</b> tradingbot</div>
+      </div>
+      <nav id="nav"></nav>
+      <div class="side-foot">
+        <button class="conn-pill" id="connPill" data-go="settings"></button>
+        <div class="mode-pill" id="modePill"></div>
+      </div>
+    </aside>
+    <main class="main">
+      <header class="topbar drag">
+        <div class="search-wrap no-drag">
+          <span class="search-ico"></span>
+          <input id="globalSearch" placeholder="Search traders on fomo or paste a Solana wallet…" autocomplete="off" spellcheck="false">
+          <kbd>Ctrl K</kbd>
+        </div>
+        <div class="top-right no-drag">
+          <div class="bal-pill" id="balPill"></div>
+          <button class="run-btn" id="runBtn"></button>
+        </div>
+      </header>
+      <section id="view" class="view"></section>
+    </main>
+  </div>
+  <div id="modal-root"></div>
+  <div id="toasts"></div>
+  <script src="app.js"></script>
+</body>
+</html>
