@@ -8,8 +8,9 @@ const { Store } = require('./store');
 const secure = require('./secure');
 const { Jupiter, SOL_MINT, sleep } = require('./jupiter');
 const { keypairFromSecret, tokenBalanceRaw, parseSwap, getParsedTx, keyStr } = require('./solana');
+const { Discover, summarize } = require('./discover');
 
-const VERSION = '1.5.0';
+const VERSION = '1.6.0';
 
 const DEFAULT_SETTINGS = {
   mode: 'paper', // 'paper' simulates fills with live quotes; 'live' signs real transactions
@@ -76,6 +77,7 @@ class Engine extends EventEmitter {
     this.jup = new Jupiter(() => this.settings, this.logger());
     this._loadWallet();
     this._connect();
+    this.discover = new Discover(this);
   }
 
   // ---------- state accessors ----------
@@ -656,34 +658,28 @@ class Engine extends EventEmitter {
   // (e.g. a coin creator's wallet that only receives pump.fun fees and never signs a trade).
   async walletActivity(address, limit = 15) {
     const pk = new PublicKey(address);
-    const sigs = (await this.connection.getSignaturesForAddress(pk, { limit: Math.min(40, limit * 4) })).filter((x) => !x.err);
-    const out = [];
-    let scanned = 0;
-    let signed = 0;
     const fast = !/api\.mainnet-beta\.solana\.com/.test(this.settings.rpcUrl);
-    const step = fast ? 8 : 2;
-    // Small batches on the free RPC: bigger bursts trip its rate limit and end up slower after backoff.
-    for (let i = 0; i < sigs.length && out.length < limit; i += step) {
-      const batch = sigs.slice(i, i + step);
-      if (i && !fast) await sleep(250);
-      const txs = await Promise.all(batch.map((s) => getParsedTx(this.connection, s.signature).catch(() => null)));
-      for (let j = 0; j < batch.length; j++) {
-        if (!txs[j]) continue;
-        scanned++;
-        if (txs[j].transaction.message.accountKeys.some((k) => keyStr(k) === address && k.signer)) signed++;
-        const swap = parseSwap(txs[j], address, batch[j].signature);
-        if (!swap) continue;
-        for (const leg of swap.legs) {
-          const tok = await this.jup.token(leg.mint);
-          out.push({
-            signature: batch[j].signature, ts: (batch[j].blockTime || 0) * 1000, side: leg.side, mint: leg.mint, symbol: tok.symbol,
-            name: tok.name, icon: tok.icon, tokenAmount: Math.abs(Number(leg.deltaRaw)) / 10 ** leg.decimals,
-            sol: Math.abs(swap.solDelta), usd: Math.abs(swap.stableDelta),
-          });
-        }
+    const sigs = (await this.connection.getSignaturesForAddress(pk, { limit: fast ? 80 : 40 })).filter((x) => !x.err);
+    const txs = await this.discover._txs(sigs.map((s) => s.signature));
+    const stats = summarize(address, txs, sigs);
+    this.discover.statsCache.set(address, { at: Date.now(), v: stats });
+    const out = [];
+    for (let j = 0; j < txs.length && out.length < limit; j++) {
+      const swap = parseSwap(txs[j], address, sigs[j].signature);
+      if (!swap) continue;
+      for (const leg of swap.legs) {
+        const tok = await this.jup.token(leg.mint);
+        out.push({
+          signature: sigs[j].signature, ts: (sigs[j].blockTime || 0) * 1000, side: leg.side, mint: leg.mint, symbol: tok.symbol,
+          name: tok.name, icon: tok.icon, tokenAmount: Math.abs(Number(leg.deltaRaw)) / 10 ** leg.decimals,
+          sol: Math.abs(swap.solDelta), usd: Math.abs(swap.stableDelta),
+        });
       }
     }
-    return { trades: out.slice(0, limit), scanned, signed, oldest: sigs.length ? (sigs[sigs.length - 1].blockTime || 0) * 1000 : null };
+    return {
+      trades: out.slice(0, limit), scanned: stats.scanned, signed: stats.signed, stats,
+      oldest: sigs.length ? (sigs[sigs.length - 1].blockTime || 0) * 1000 : null,
+    };
   }
 
   async testRpc(url) {

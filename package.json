@@ -1,6 +1,6 @@
 {
   "name": "fomo-tradingbot",
-  "version": "1.5.0",
+  "version": "1.6.0",
   "private": true,
   "description": "Copy-trade pump.fun traders on Solana. Desktop app + 24/7 mode.",
   "license": "MIT",
@@ -32,11 +32,11 @@
     "utf-8-validate": false,
     "bufferutil": false
   },
-  "author": "Pumpfun Bot",
+  "author": "AutoPump",
   "homepage": "https://github.com/rimidalvsulrod/fomo-tradingbot",
   "build": {
     "appId": "com.fomotradingbot.desktop",
-    "productName": "Pumpfun Bot",
+    "productName": "AutoPump",
     "directories": {
       "output": "dist",
       "buildResources": "assets"
@@ -72,8 +72,8 @@
       "runAfterFinish": true,
       "createDesktopShortcut": true,
       "createStartMenuShortcut": true,
-      "shortcutName": "Pumpfun Bot",
-      "artifactName": "PumpfunBot-Setup.exe",
+      "shortcutName": "AutoPump",
+      "artifactName": "AutoPump-Setup.exe",
       "deleteAppDataOnUninstall": false
     },
     "publish": [

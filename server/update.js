@@ -8,7 +8,7 @@ const { pipeline } = require('stream/promises');
 
 const LATEST = 'https://api.github.com/repos/rimidalvsulrod/fomo-tradingbot/releases/latest';
 // Current name first; older releases (and older servers looking for it) use the pre-rename name.
-const ASSETS = ['PumpfunBotServer.exe', 'FomoTradingbotServer.exe'];
+const ASSETS = ['AutoPumpServer.exe', 'PumpfunBotServer.exe', 'FomoTradingbotServer.exe'];
 
 function newer(a, b) {
   const x = a.split('.').map(Number);
@@ -44,7 +44,7 @@ function swapAndRestart(exePath, newFile, args) {
   fs.renameSync(exePath, exePath + '.old');
   fs.renameSync(newFile, exePath);
   const quoted = args.map((a) => `"${String(a).replace(/"/g, '')}"`).join(' ');
-  spawn('cmd.exe', ['/c', `start "Pumpfun Bot Server" "${exePath}" ${quoted}`], {
+  spawn('cmd.exe', ['/c', `start "AutoPump Server" "${exePath}" ${quoted}`], {
     detached: true, stdio: 'ignore', windowsVerbatimArguments: true,
   }).unref();
 }

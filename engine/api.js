@@ -68,6 +68,13 @@ function startApi(engine, { host = '0.0.0.0', port = 7420, token, name = os.host
   route('GET', '/api/logs', () => engine.logs.slice(-300));
   route('GET', '/api/token/:mint', ({ params }) => engine.jup.token(params.mint));
   route('GET', '/api/wallet-activity/:address', ({ params, query }) => engine.walletActivity(params.address, Number(query.get('limit')) || 15));
+  route('GET', '/api/discover/coins', ({ query }) => engine.discover.coins(query.get('list') || 'toptraded'));
+  route('GET', '/api/discover/coin/:mint', async ({ params }) => {
+    const [token, traders] = await Promise.all([engine.jup.token(params.mint), engine.discover.coinTraders(params.mint)]);
+    return { token, traders };
+  });
+  route('GET', '/api/discover/leaderboard', () => engine.discover.leaderboard());
+  route('POST', '/api/discover/scan', () => engine.discover.scan());
   route('POST', '/api/rpc/test', async ({ body }) => {
     try { return await engine.testRpc(body.url); } catch (e) { throw err(400, `That RPC URL didn't work: ${e.message}`); }
   });

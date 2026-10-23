@@ -94,7 +94,7 @@ function state247() {
     run247: !!cfg.run247,
     lanAccess: !!cfg.lanAccess,
     lanActive: !!(local && local.lan),
-    lanError: cfg.lanAccess && local && !local.lan ? `Port ${cfg.lanPort || 7420} is in use on this PC (is PumpfunBotServer.exe running here too?)` : null,
+    lanError: cfg.lanAccess && local && !local.lan ? `Port ${cfg.lanPort || 7420} is in use on this PC (is AutoPumpServer.exe running here too?)` : null,
     port: local && local.lan ? local.port : cfg.lanPort || 7420,
     pin: local && local.lan ? local.api.pin : null,
     ips,
@@ -218,7 +218,7 @@ function createWindow() {
   win = new BrowserWindow({
     width: 1360, height: 860, minWidth: 1040, minHeight: 660,
     backgroundColor: '#060510',
-    title: 'Pumpfun Bot',
+    title: 'AutoPump',
     icon: path.join(__dirname, '..', 'assets', 'icon.ico'),
     titleBarStyle: 'hidden',
     titleBarOverlay: { color: '#060510', symbolColor: '#9899a3', height: 44 },
@@ -236,7 +236,7 @@ function createWindow() {
     e.preventDefault();
     win.hide();
     if (!cfg.trayHintShown && tray) {
-      tray.displayBalloon({ title: 'Still copy trading', content: 'Pumpfun Bot keeps running in the tray. Right-click the icon to quit.', iconType: 'info' });
+      tray.displayBalloon({ title: 'Still copy trading', content: 'AutoPump keeps running in the tray. Right-click the icon to quit.', iconType: 'info' });
       cfg.trayHintShown = true;
       saveCfg();
     }
@@ -250,16 +250,16 @@ function createWindow() {
 
 function createTray() {
   tray = new Tray(nativeImage.createFromPath(path.join(__dirname, '..', 'assets', 'icon.ico')));
-  tray.setToolTip('Pumpfun Bot');
+  tray.setToolTip('AutoPump');
   tray.on('click', showWindow);
   updateTray();
 }
 
 function updateTray() {
   if (!tray) return;
-  tray.setToolTip(`Pumpfun Bot — ${connState.connected ? (connState.kind === 'local' ? 'running on this PC' : 'connected to ' + connState.name) : 'disconnected'}`);
+  tray.setToolTip(`AutoPump — ${connState.connected ? (connState.kind === 'local' ? 'running on this PC' : 'connected to ' + connState.name) : 'disconnected'}`);
   tray.setContextMenu(Menu.buildFromTemplate([
-    { label: 'Open Pumpfun Bot', click: showWindow },
+    { label: 'Open AutoPump', click: showWindow },
     { type: 'separator' },
     { label: 'Pause copy trading', click: () => engineRequest('POST', '/api/bot/stop') },
     { label: 'Resume copy trading', click: () => engineRequest('POST', '/api/bot/start') },
@@ -290,6 +290,31 @@ function handle(ch, fn) {
 
 handle('app:info', () => ({ version: VERSION, platform: process.platform, closeToTray: cfg.closeToTray }));
 handle('app:setCloseToTray', (v) => { cfg.closeToTray = !!v; saveCfg(); return { ok: true }; });
+// ---------- Browse pump.fun ----------
+let pumpWin = null;
+handle('pump:open', (url) => {
+  const start = typeof url === 'string' && /^https:\/\/pump\.fun\//.test(url) ? url : 'https://pump.fun/';
+  if (pumpWin && !pumpWin.isDestroyed()) { pumpWin.show(); pumpWin.focus(); if (url) pumpWin.loadURL(start); return { ok: true }; }
+  pumpWin = new BrowserWindow({
+    width: 1300, height: 880, title: 'pump.fun — AutoPump', autoHideMenuBar: true, backgroundColor: '#0e0e10',
+    icon: path.join(__dirname, '..', 'assets', 'icon.ico'),
+    webPreferences: { partition: 'persist:pumpfun', sandbox: true, contextIsolation: true, preload: path.join(__dirname, 'pump-preload.js') },
+  });
+  pumpWin.webContents.setWindowOpenHandler(({ url: u }) => {
+    try { if (new URL(u).hostname === 'pump.fun') { pumpWin.loadURL(u); return { action: 'deny' }; } } catch { /* external */ }
+    openExternal(u);
+    return { action: 'deny' };
+  });
+  pumpWin.on('closed', () => { pumpWin = null; });
+  pumpWin.loadURL(start);
+  return { ok: true };
+});
+ipcMain.on('pump:handoff', (e, msg) => {
+  if (!pumpWin || e.sender !== pumpWin.webContents || !msg || !/^[1-9A-HJ-NP-Za-km-z]{32,44}$/.test(String(msg.id))) return;
+  showWindow();
+  send('app:nav', msg.kind === 'coin' ? { route: 'coin', ref: msg.id } : { route: 'profile', ref: 'wallet:' + msg.id });
+});
+
 handle('app:247:get', () => state247());
 handle('app:247:set', async (patch = {}) => {
   if ('run247' in patch) {
@@ -364,7 +389,7 @@ function setupUpdates() {
   autoUpdater.on('update-available', (i) => setUpdateState({ state: 'downloading', version: i.version }));
   autoUpdater.on('update-downloaded', (i) => {
     setUpdateState({ state: 'ready', version: i.version });
-    if (tray) tray.displayBalloon({ title: 'Update ready', content: `Pumpfun Bot ${i.version} is ready. Restart from the app to install it.`, iconType: 'info' });
+    if (tray) tray.displayBalloon({ title: 'Update ready', content: `AutoPump ${i.version} is ready. Restart from the app to install it.`, iconType: 'info' });
   });
   autoUpdater.on('error', (e) => dlog('update error', e));
   const check = () => autoUpdater.checkForUpdates().catch((e) => dlog('update check failed', e));
@@ -389,7 +414,7 @@ app.whenReady().then(async () => {
     await connect();
   } catch (e) {
     dlog('connect failed', e);
-    dialog.showErrorBox('Pumpfun Bot', 'Could not start the trading engine: ' + e.message);
+    dialog.showErrorBox('AutoPump', 'Could not start the trading engine: ' + e.message);
   }
   if (process.env.FOMOBOT_SCREENSHOT) captureScreens(process.env.FOMOBOT_SCREENSHOT);
 });

@@ -1,5 +1,5 @@
 'use strict';
-// Builds dist/PumpfunBotServer.exe: esbuild bundle -> Node single executable application.
+// Builds dist/AutoPumpServer.exe: esbuild bundle -> Node single executable application.
 const fs = require('fs');
 const path = require('path');
 const { execFileSync } = require('child_process');
@@ -7,7 +7,7 @@ const { execFileSync } = require('child_process');
 const root = path.join(__dirname, '..');
 const build = path.join(root, 'build', 'server');
 const dist = path.join(root, 'dist');
-const exe = path.join(dist, 'PumpfunBotServer.exe');
+const exe = path.join(dist, 'AutoPumpServer.exe');
 const version = require('../package.json').version;
 
 fs.mkdirSync(build, { recursive: true });
@@ -44,12 +44,12 @@ execFileSync(rcedit, [exe,
   '--set-icon', path.join(root, 'assets', 'server-icon.ico'),
   '--set-file-version', version,
   '--set-product-version', version,
-  '--set-version-string', 'ProductName', 'Pumpfun Bot Server',
-  '--set-version-string', 'FileDescription', 'Pumpfun Bot Server',
-  '--set-version-string', 'CompanyName', 'Pumpfun Bot',
+  '--set-version-string', 'ProductName', 'AutoPump Server',
+  '--set-version-string', 'FileDescription', 'AutoPump Server',
+  '--set-version-string', 'CompanyName', 'AutoPump',
   '--set-version-string', 'LegalCopyright', 'MIT License',
-  '--set-version-string', 'OriginalFilename', 'PumpfunBotServer.exe',
-  '--set-version-string', 'InternalName', 'PumpfunBotServer',
+  '--set-version-string', 'OriginalFilename', 'AutoPumpServer.exe',
+  '--set-version-string', 'InternalName', 'AutoPumpServer',
 ], { stdio: 'inherit' });
 
 console.log('• injecting app');

@@ -215,6 +215,7 @@ function onEngineEvent(ev) {
     if (S.route === 'activity') soon('render', render);
     return;
   }
+  if (ev.type === 'leaderboard') { soon('lb', () => loadBoard(), 700); return; }
   if (ev.type === 'targets') soon('tg', () => loadTargets().then(() => { if (['home', 'copying', 'profile'].includes(S.route)) render(); }), 400);
   if (ev.type === 'positions') soon('pos', () => loadPositions().then(() => { if (['home', 'portfolio'].includes(S.route)) render(); }), 400);
 }
@@ -222,7 +223,7 @@ function onEngineEvent(ev) {
 // ================= chrome =================
 const NAV = [
   ['home', 'Home', 'home'],
-  ['discover', 'Add trader', 'plus'],
+  ['discover', 'Discover', 'search'],
   ['copying', 'Copying', 'copy'],
   ['portfolio', 'Portfolio', 'pie'],
   ['activity', 'Activity', 'activity'],
@@ -230,7 +231,7 @@ const NAV = [
 ];
 
 function renderChrome() {
-  const active = S.route === 'profile' ? 'discover' : S.route;
+  const active = ['profile', 'coin'].includes(S.route) ? 'discover' : S.route;
   $('#nav').innerHTML = NAV.map(([id, label, ic]) => {
     const badge = id === 'copying' && S.targets.filter((t) => t.enabled).length ? `<span class="nav-badge">${S.targets.filter((t) => t.enabled).length}</span>` : '';
     return `<button class="nav-item ${active === id ? 'active' : ''}" data-go="${id}">${icon(ic)}<span>${label}</span>${badge}</button>`;
@@ -444,13 +445,18 @@ async function toggleRunning() {
   } catch (e) { toast(e.message, 'error'); }
 }
 
-// ---------- ADD TRADER ----------
+// ---------- DISCOVER ----------
+const DISC = { tab: 'leaderboard', list: 'toptraded', coins: {}, board: null, sort: 'winRate', minClosed: 3 };
+
 VIEWS.discover = () => {
   const d = S.discover;
+  const tab = DISC.tab;
   return `
-  <div class="page-title">Add a trader</div>
-  <div class="page-sub">Paste the Solana wallet of anyone you want to copy. The bot watches it on-chain and mirrors their buys and sells.</div>
-  <div class="card">
+  <div class="row" style="align-items:flex-end;margin-bottom:16px">
+    <div class="grow"><div class="page-title">Discover</div><div class="page-sub" style="margin:0">Find pump.fun traders worth copying — ranked by their real on-chain results.</div></div>
+    <button class="btn ghost" id="browsePump">${icon('ext')}Browse pump.fun</button>
+  </div>
+  <div class="card" style="padding:14px 16px">
     <div class="row">
       <div class="search-wrap grow" style="max-width:none">
         <span class="search-ico">${icon('wallet')}</span>
@@ -458,15 +464,88 @@ VIEWS.discover = () => {
       </div>
       <button class="btn primary" id="discGo">${icon('search')}View wallet</button>
     </div>
-    ${d.error ? `<div class="note warn" style="margin-top:14px">${icon('warn')}<div>${esc(d.error)}</div></div>` : ''}
+    ${d.error ? `<div class="note warn" style="margin-top:12px">${icon('warn')}<div>${esc(d.error)}</div></div>` : ''}
   </div>
-  <div class="grid g3" style="margin-top:16px">
-    <div class="stat"><div class="k">${icon('search')}1 · Get their wallet</div><div class="small muted" style="margin-top:8px;line-height:1.55">On pump.fun, open a coin, click a trader's name in its trades, and copy their profile link. <a data-open="https://pump.fun">Open pump.fun</a></div></div>
-    <div class="stat"><div class="k">${icon('activity')}2 · Check their trades</div><div class="small muted" style="margin-top:8px;line-height:1.55">Paste it above. You'll see what that wallet bought and sold recently, straight from the blockchain.</div></div>
-    <div class="stat"><div class="k">${icon('copy')}3 · Hit Copy trader</div><div class="small muted" style="margin-top:8px;line-height:1.55">Pick a fixed SOL amount or a % of their size. From then on every buy and sell is mirrored.</div></div>
-  </div>
-  ${S.targets.length ? `<div class="card pad0" style="margin-top:16px"><div class="card-h" style="padding:18px 20px 0"><h3>Wallets you copy</h3><a class="link" data-go="copying">Manage</a></div><div class="list" style="margin-top:6px">${S.targets.map(targetRow).join('')}</div></div>` : ''}`;
+  <div class="card pad0" style="margin-top:16px">
+    <div class="tabs">
+      <button class="${tab === 'leaderboard' ? 'on' : ''}" data-dtab="leaderboard">${'Leaderboard'}</button>
+      <button class="${tab === 'coins' ? 'on' : ''}" data-dtab="coins">Coins</button>
+    </div>
+    ${tab === 'leaderboard' ? boardHtml() : coinsHtml()}
+  </div>`;
 };
+
+function boardHtml() {
+  const b = DISC.board;
+  if (!b) { loadBoard(); return `<div class="loading"><span class="spinner"></span>Loading leaderboard…</div>`; }
+  const scanning = b.status === 'scanning';
+  const pct = b.progress && b.progress.total ? Math.round((b.progress.done / b.progress.total) * 100) : 0;
+  let rows = (b.rows || []).filter((r) => r.closed >= DISC.minClosed);
+  const key = DISC.sort;
+  rows = rows.slice().sort((x, y) => (y[key] ?? -Infinity) - (x[key] ?? -Infinity) || (y.pnlSol - x.pnlSol));
+  const th = (k, label) => `<th class="r" style="cursor:pointer" data-sort="${k}">${label}${DISC.sort === k ? ' ▾' : ''}</th>`;
+  const head = `<div class="row" style="padding:14px 20px;flex-wrap:wrap;gap:10px">
+      <div class="grow small muted" style="line-height:1.5">${scanning
+        ? `<div class="row" style="gap:8px"><span class="spinner sm"></span><b style="color:var(--text)">Scanning… ${pct}%</b> ${esc(b.progress.step || '')}</div>`
+        : b.finishedAt ? `Traders of today's hottest pump.fun coins${b.coins && b.coins.length ? ` (${b.coins.map((c) => '$' + esc(c.symbol)).join(', ')})` : ''}. Updated ${agoText(b.finishedAt)}.` : 'Scan the hottest pump.fun coins to rank their traders by win rate.'}</div>
+      <span class="small muted">Min. finished trades</span>
+      <div class="chips">${[1, 3, 5, 10].map((n) => `<button class="chip ${DISC.minClosed === n ? 'on' : ''}" data-minc="${n}">${n}+</button>`).join('')}</div>
+      <button class="btn ${b.finishedAt ? 'ghost' : 'primary'} sm" id="scanBtn" ${scanning ? 'disabled' : ''}>${icon('refresh')}${b.finishedAt ? 'Rescan' : 'Scan now'}</button>
+    </div>
+    ${scanning ? `<div style="height:3px;background:var(--line);margin:0 20px"><div style="height:3px;width:${pct}%;background:var(--accent);transition:width .4s"></div></div>` : ''}
+    ${usingPublicRpc() ? `<div class="small faint" style="padding:8px 20px 0">On the free Solana connection the scan is small and takes several minutes. Add a free Helius key on Home for a bigger, faster leaderboard.</div>` : ''}`;
+  if (!rows.length) {
+    return head + `<div class="empty"><div class="ico">${icon('trophy')}</div><p>${scanning ? 'Traders appear here as they are checked.' : (b.rows || []).length ? `No traders with ${DISC.minClosed}+ finished trades in this scan — lower the minimum.` : 'No results yet. Hit Scan now.'}</p></div>`;
+  }
+  return head + `<table class="t" style="margin-top:6px"><thead><tr><th>#</th><th>Trader</th>${th('winRate', 'Win rate')}${th('pnlSol', 'Profit')}${th('closed', 'Finished')}${th('trades', 'Trades')}${th('lastTs', 'Last trade')}<th></th></tr></thead><tbody>
+    ${rows.map((r, i) => {
+      const t = S.targets.find((x) => x.address === r.address);
+      const wr = r.winRate == null ? null : Math.round(r.winRate * 100);
+      return `<tr>
+        <td class="faint num">${i + 1}</td>
+        <td><div class="row click" style="cursor:pointer;gap:10px" data-profile="wallet:${esc(r.address)}">${avatar(null, t?.name || r.address, 'sm')}<div><div style="font-weight:700">${esc(t?.name || short(r.address, 5))}</div><div class="small faint">${esc((r.seenOn || []).map((s) => '$' + s).join(' '))}</div></div></div></td>
+        <td class="r"><div class="row" style="justify-content:flex-end;gap:8px"><div style="width:60px;height:6px;border-radius:9px;background:var(--line2)"><div style="width:${wr ?? 0}%;height:6px;border-radius:9px;background:${(wr ?? 0) >= 50 ? 'var(--green)' : 'var(--red)'}"></div></div><b class="num">${wr == null ? '—' : wr + '%'}</b></div><div class="small faint">${r.wins}/${r.closed} won</div></td>
+        <td class="r num ${pnlClass(r.pnlSol)}"><b>${r.pnlSol >= 0 ? '+' : ''}${fmtSol(r.pnlSol)}</b><div class="small faint">SOL</div></td>
+        <td class="r num">${r.closed}</td>
+        <td class="r num muted">${r.trades}</td>
+        <td class="r muted">${r.lastTs ? agoText(r.lastTs) : '—'}</td>
+        <td class="r">${t ? `<span class="badge ok">${t.mode === 'inverse' ? 'OPPOSITE' : 'COPYING'}</span>` : `<button class="btn primary xs" data-copyaddr="${esc(r.address)}">${icon('copy')}Copy</button>`}</td>
+      </tr>`;
+    }).join('')}</tbody></table>
+    <div class="small faint" style="padding:12px 20px">Win rate = share of coins they fully sold for more SOL than they paid, within their recent trades. Past results don't guarantee future ones.</div>`;
+}
+
+function coinsHtml() {
+  const list = DISC.list;
+  const coins = DISC.coins[list];
+  if (!coins) loadCoins(list);
+  const chips = [['toptraded', 'Top traded'], ['toptrending', 'Trending'], ['recent', 'New']].map(([k, l]) => `<button class="chip ${list === k ? 'on' : ''}" data-clist="${k}">${l}</button>`).join('');
+  let body;
+  if (!coins) body = `<div class="loading"><span class="spinner"></span>Loading coins…</div>`;
+  else if (coins.error) body = `<div class="empty"><p>${esc(coins.error)}</p></div>`;
+  else if (!coins.length) body = `<div class="empty"><p>No pump.fun coins in this list right now.</p></div>`;
+  else body = `<div class="coin-grid">${coins.map((c) => `
+    <div class="coin-card" data-coin="${esc(c.mint)}">
+      ${tokImg(c.icon, c.symbol, 'lgc')}
+      <div class="grow" style="min-width:0">
+        <div class="row" style="gap:6px"><b class="ellipsis">${esc(c.name || c.symbol)}</b>${c.graduated ? '<span class="badge blue" title="Graduated from the bonding curve">GRAD</span>' : ''}</div>
+        <div class="small muted">$${esc(c.symbol)}${c.createdAt ? ' · ' + agoText(c.createdAt) : ''}</div>
+        <div class="row small" style="gap:12px;margin-top:6px"><span>MC <b>${fmtUsd(c.mcap)}</b></span>${c.change1h != null ? `<span class="${pnlClass(c.change1h)}">${fmtPct(c.change1h)}</span>` : ''}<span class="muted">Vol ${fmtUsd(c.volume1h)}</span></div>
+      </div>
+    </div>`).join('')}</div>`;
+  return `<div style="padding:14px 20px 4px" class="chips">${chips}</div>${body}`;
+}
+
+async function loadBoard() {
+  try { DISC.board = await GET('/api/discover/leaderboard'); } catch (e) { DISC.board = { status: 'error', rows: [], error: e.message }; }
+  if (S.route === 'discover' && DISC.tab === 'leaderboard') render();
+}
+
+async function loadCoins(list) {
+  DISC.coins[list] = null;
+  try { DISC.coins[list] = await GET(`/api/discover/coins?list=${list}`); } catch (e) { DISC.coins[list] = { error: e.message }; }
+  if (S.route === 'discover' && DISC.tab === 'coins' && DISC.list === list) render();
+}
 
 function runSearch(q) {
   const d = S.discover;
@@ -483,7 +562,70 @@ VIEW_BIND.discover = (root) => {
   q.addEventListener('keydown', (e) => { if (e.key === 'Enter') runSearch(q.value); });
   q.addEventListener('paste', () => setTimeout(() => { if (parseTraderInput(q.value).address) runSearch(q.value); }, 0));
   $('#discGo', root).onclick = () => runSearch(q.value);
-  bindTargetToggles(root);
+  $('#browsePump', root).onclick = () => bot.pump.open();
+  $$('[data-dtab]', root).forEach((b) => b.onclick = () => { DISC.tab = b.dataset.dtab; render(); });
+  $$('[data-clist]', root).forEach((b) => b.onclick = () => { DISC.list = b.dataset.clist; loadCoins(DISC.list); render(); });
+  $$('[data-coin]', root).forEach((el) => el.onclick = () => go('coin', { ref: el.dataset.coin }));
+  $$('[data-sort]', root).forEach((el) => el.onclick = () => { DISC.sort = el.dataset.sort; render(); });
+  $$('[data-minc]', root).forEach((el) => el.onclick = () => { DISC.minClosed = Number(el.dataset.minc); render(); });
+  $$('[data-copyaddr]', root).forEach((el) => el.onclick = (e) => { e.stopPropagation(); openCopyModal({ address: el.dataset.copyaddr, name: short(el.dataset.copyaddr, 5) }); });
+  const sb = $('#scanBtn', root);
+  if (sb) sb.onclick = async () => { try { DISC.board = await POST('/api/discover/scan'); render(); } catch (e) { toast(e.message, 'error'); } };
+};
+
+// ---------- COIN PAGE ----------
+const coinCache = new Map();
+VIEWS.coin = () => {
+  const mint = S.params.ref;
+  const c = coinCache.get(mint);
+  const listed = Object.values(DISC.coins).flat().find((x) => x && x.mint === mint);
+  if (!c) setTimeout(() => loadCoin(mint), 0);
+  const tok = (c && c.token) || listed || { symbol: '…', name: '' };
+  const traders = c && c.traders;
+  return `
+  <button class="btn ghost sm" data-go="discover" style="margin-bottom:12px">${icon('arrowL')}Back</button>
+  <div class="card">
+    <div class="row" style="gap:16px;flex-wrap:wrap">
+      ${tokImg(tok.icon, tok.symbol, 'xl')}
+      <div class="grow">
+        <div style="font-size:24px;font-weight:800;letter-spacing:-.02em">${esc(tok.name || tok.symbol)}</div>
+        <div class="muted">$${esc(tok.symbol)} · <span class="mono small">${short(mint, 6)}</span></div>
+        <div class="row small" style="gap:16px;margin-top:8px">${listed ? `<span>MC <b>${fmtUsd(listed.mcap)}</b></span><span class="${pnlClass(listed.change1h)}">1h ${fmtPct(listed.change1h)}</span><span class="muted">1h vol ${fmtUsd(listed.volume1h)}</span>${listed.holders ? `<span class="muted">${fmtAmt(listed.holders).replace('.00', '')} holders</span>` : ''}` : ''}</div>
+      </div>
+      <button class="btn ghost" data-open="https://pump.fun/coin/${esc(mint)}">${icon('ext')}pump.fun</button>
+      <button class="btn ghost" data-open="https://dexscreener.com/solana/${esc(mint)}">${icon('ext')}Chart</button>
+    </div>
+  </div>
+  <div class="card pad0" style="margin-top:16px">
+    <div class="card-h" style="padding:18px 20px 0"><h3>Who's trading it right now</h3></div>
+    ${!traders ? `<div class="loading" style="flex-direction:column"><div class="row"><span class="spinner"></span>Reading recent trades on-chain…</div>${usingPublicRpc() ? '<div class="small faint">Takes up to a minute on the free Solana connection.</div>' : ''}</div>`
+      : traders.error ? `<div class="empty"><p>${esc(traders.error)}</p></div>`
+      : !traders.length ? `<div class="empty"><p>No trades found in its most recent transactions.</p></div>`
+      : `<table class="t"><thead><tr><th>Trader</th><th class="r">Bought</th><th class="r">Sold</th><th class="r">Trades</th><th class="r">Last</th><th></th></tr></thead><tbody>
+        ${traders.map((t) => {
+          const tracked = S.targets.find((x) => x.address === t.address);
+          return `<tr>
+          <td><div class="row click" style="cursor:pointer;gap:10px" data-profile="wallet:${esc(t.address)}">${avatar(null, tracked?.name || t.address, 'sm')}<b>${esc(tracked?.name || short(t.address, 5))}</b></div></td>
+          <td class="r num up">${t.boughtSol ? fmtSol(t.boughtSol) + ' SOL' : '—'}</td>
+          <td class="r num down">${t.soldSol ? fmtSol(t.soldSol) + ' SOL' : '—'}</td>
+          <td class="r num muted">${t.buys + t.sells}</td>
+          <td class="r muted">${t.lastTs ? agoText(t.lastTs) : ''}</td>
+          <td class="r"><button class="btn ghost xs" data-profile="wallet:${esc(t.address)}">Win rate</button> ${tracked ? '<span class="badge ok">COPYING</span>' : `<button class="btn primary xs" data-copyaddr="${esc(t.address)}">${icon('copy')}Copy</button>`}</td>
+        </tr>`;
+        }).join('')}</tbody></table>`}
+  </div>`;
+};
+
+async function loadCoin(mint) {
+  if (coinCache.has(mint)) return;
+  coinCache.set(mint, { token: null, traders: null });
+  try { coinCache.set(mint, await GET(`/api/discover/coin/${mint}`)); } catch (e) { coinCache.set(mint, { token: null, traders: { error: e.message } }); }
+  setTimeout(() => coinCache.delete(mint), 120e3);
+  if (S.route === 'coin' && S.params.ref === mint) render();
+}
+
+VIEW_BIND.coin = (root) => {
+  $$('[data-copyaddr]', root).forEach((el) => el.onclick = (e) => { e.stopPropagation(); openCopyModal({ address: el.dataset.copyaddr, name: short(el.dataset.copyaddr, 5) }); });
 };
 
 // ---------- WALLET PROFILE ----------
@@ -511,6 +653,10 @@ VIEWS.profile = () => {
       <h2>${esc(u.name)}</h2>
       <div class="handle mono">${esc(u.address)}</div>
       <div class="prof-stats">
+        ${p.scan && p.scan.stats ? (() => { const st = p.scan.stats; return `
+        <div><div class="k">Win rate</div><div class="v ${st.winRate == null ? '' : st.winRate >= 0.5 ? 'up' : 'down'}">${st.winRate == null ? '—' : Math.round(st.winRate * 100) + '%'}</div><div class="small faint">${st.wins}/${st.closed} finished trades won</div></div>
+        <div><div class="k">Profit (finished)</div><div class="v ${pnlClass(st.pnlSol)}">${st.pnlSol >= 0 ? '+' : ''}${fmtSol(st.pnlSol)} SOL</div></div>
+        <div><div class="k">Coins traded</div><div class="v">${st.coins}</div></div>`; })() : p.swaps ? '' : `<div><div class="k">Win rate</div><div class="v"><span class="spinner sm"></span></div></div>`}
         ${p.swaps ? `<div><div class="k">Recent trades</div><div class="v">${p.swaps.length}</div></div>` : ''}
         ${copying ? `<div><div class="k">You copied</div><div class="v">${copying.stats?.copied || 0}</div></div>` : ''}
       </div>
@@ -811,9 +957,9 @@ VIEWS.settings = () => {
         ${S.always.lanError ? `<div class="note warn" style="margin-top:8px">${icon('warn')}<div>${esc(S.always.lanError)}</div></div>` : ''}
         ${S.always.lanActive ? `<div class="server-item" style="margin-top:8px"><div class="server-ico">${icon('link')}</div><div class="grow"><div class="small muted">On your other PC: Settings → Find computers, or enter</div><div class="mono" style="margin-top:2px">${S.always.ips.map((i) => `${esc(i.address)}:${esc(S.always.port)}`).join(' · ') || 'no network found'}</div></div><div style="text-align:right"><div class="small muted">Pairing code</div><div class="num" style="font-size:22px;font-weight:800;letter-spacing:.12em">${esc(String(S.always.pin || '').replace(/(\d{3})(\d{3})/, '$1 $2'))}</div><a class="small" id="newPin">New code</a></div></div>` : ''}` : ''}
         <div class="sec-title">${c.kind === 'local' ? 'Control a bot on another PC' : 'Switch computer'}</div>
-        <div class="muted small" style="line-height:1.55;margin-bottom:12px">If the bot runs on another PC (this app with “Let my other PCs connect” on, or PumpfunBotServer.exe), find it here. Both PCs need to be on the same network.</div>
+        <div class="muted small" style="line-height:1.55;margin-bottom:12px">If the bot runs on another PC (this app with “Let my other PCs connect” on, or AutoPumpServer.exe), find it here. Both PCs need to be on the same network.</div>
         <div class="row"><button class="btn primary" id="discoverBtn">${SET.discovering ? '<span class="spinner sm"></span>Searching…' : icon('search') + 'Find computers'}</button><button class="btn ghost" id="manualConn">Enter IP manually</button></div>
-        ${SET.discovered ? `<div style="margin-top:14px">${SET.discovered.length ? SET.discovered.map((d) => `<div class="server-item"><div class="server-ico">${icon('server')}</div><div class="grow"><div style="font-weight:700">${esc(d.name)}</div><div class="small muted mono">${esc(d.host)}:${esc(d.port)} · v${esc(d.version)}</div></div><button class="btn primary sm" data-pair="${esc(d.host)}" data-port="${esc(d.port)}" data-name="${esc(d.name)}">Pair</button></div>`).join('') : `<div class="note warn">${icon('warn')}<div>Nothing found. Make sure the bot is running on the other PC (this app with “Let my other PCs connect” on, or PumpfunBotServer.exe), both PCs are on the same Wi-Fi/LAN, and Windows Firewall allowed it (it asks the first time). Or use “Enter IP manually”.</div></div>`}</div>` : ''}
+        ${SET.discovered ? `<div style="margin-top:14px">${SET.discovered.length ? SET.discovered.map((d) => `<div class="server-item"><div class="server-ico">${icon('server')}</div><div class="grow"><div style="font-weight:700">${esc(d.name)}</div><div class="small muted mono">${esc(d.host)}:${esc(d.port)} · v${esc(d.version)}</div></div><button class="btn primary sm" data-pair="${esc(d.host)}" data-port="${esc(d.port)}" data-name="${esc(d.name)}">Pair</button></div>`).join('') : `<div class="note warn">${icon('warn')}<div>Nothing found. Make sure the bot is running on the other PC (this app with “Let my other PCs connect” on, or AutoPumpServer.exe), both PCs are on the same Wi-Fi/LAN, and Windows Firewall allowed it (it asks the first time). Or use “Enter IP manually”.</div></div>`}</div>` : ''}
       </div>
 
       <div class="card">
@@ -1024,6 +1170,7 @@ bot.always.onState((a) => { S.always = a; if (S.route === 'settings' && !$('#mod
 bot.update.state().then(renderUpdate);
 
 bot.onEvent(onEngineEvent);
+bot.onNav((n) => { if (n && n.route) go(n.route, { ref: n.ref }); });
 bot.conn.onState((s) => { const was = S.conn.connected; S.conn = s; renderChrome(); if (s.connected && !was) loadAll().then(render); if (S.route === 'settings') soon('render', render); });
 
 (async () => {
