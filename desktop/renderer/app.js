@@ -564,16 +564,23 @@ function traderCol() {
   if (!b) loadBoard();
   const scanning = b && b.status === 'scanning';
   const pct = scanning && b.progress.total ? Math.round((b.progress.done / b.progress.total) * 100) : 0;
+  const losers = DISC.sort === 'losers';
   let rows = ((b && b.rows) || []).filter((r) => r.closed >= DISC.minClosed);
-  rows = rows.slice().sort((x, y) => (y[DISC.sort] ?? -Infinity) - (x[DISC.sort] ?? -Infinity) || (y.pnlSol - x.pnlSol));
+  if (losers) {
+    // Consistently unprofitable: lost money overall and lost on most coins they finished.
+    rows = rows.filter((r) => r.pnlSol < 0 && r.winRate != null && r.winRate <= 0.4)
+      .sort((x, y) => (x.winRate - y.winRate) || (x.pnlSol - y.pnlSol));
+  } else {
+    rows = rows.slice().sort((x, y) => (y[DISC.sort] ?? -Infinity) - (x[DISC.sort] ?? -Infinity) || (y.pnlSol - x.pnlSol));
+  }
   const sortPill = (k, l) => `<button class="pill ${DISC.sort === k ? 'on' : ''}" data-sort="${k}">${l}</button>`;
-  const tools = `<div class="col-tools">${sortPill('winRate', 'Win rate')}${sortPill('pnlSol', 'Profit')}${sortPill('closed', 'Trades')}
+  const tools = `<div class="col-tools">${sortPill('winRate', 'Win rate')}${sortPill('pnlSol', 'Profit')}${sortPill('closed', 'Trades')}${sortPill('losers', 'Losers')}
     <span class="faint small" style="margin-left:6px">min</span>${[1, 3, 5].map((n) => `<button class="pill ${DISC.minClosed === n ? 'on' : ''}" data-minc="${n}">${n}+</button>`).join('')}
     <button class="pill" id="scanBtn" style="margin-left:auto" ${scanning ? 'disabled' : ''}>${scanning ? `<span class="spinner sm"></span> ${pct}%` : icon('refresh') + ' Scan'}</button></div>
     ${scanning ? `<div class="small faint" style="padding:0 14px 8px">${esc(b.progress.step || '')}</div>` : ''}`;
   let body;
   if (!b) body = `<div class="loading"><span class="spinner"></span></div>`;
-  else if (!rows.length) body = `<div class="empty" style="padding:28px 18px"><div class="ico">${icon('trophy')}</div><p>${scanning ? 'Traders appear here as they are checked.' : (b.rows || []).length ? 'Nobody with that many finished trades yet — lower the minimum.' : 'Hit Scan to rank the traders of today\'s hottest pump.fun coins by win rate.'}${usingPublicRpc() ? '<br><span class="faint">A scan takes ~10 minutes on the free connection; a free Helius key (Home) makes it fast and keeps it fresh automatically.</span>' : ''}</p></div>`;
+  else if (!rows.length) body = `<div class="empty" style="padding:28px 18px"><div class="ico">${icon('trophy')}</div><p>${scanning ? 'Traders appear here as they are checked.' : (b.rows || []).length ? (losers ? 'No consistent losers in this scan yet (lost money and won 40% or less). Lower the minimum or scan again.' : 'Nobody with that many finished trades yet — lower the minimum.') : 'Hit Scan to rank the traders of today\'s hottest pump.fun coins by win rate.'}${usingPublicRpc() ? '<br><span class="faint">A scan takes ~10 minutes on the free connection; a free Helius key (Home) makes it fast and keeps it fresh automatically.</span>' : ''}</p></div>`;
   else body = rows.map((r, i) => {
     const t = S.targets.find((x) => x.address === r.address);
     const wr = r.winRate == null ? null : Math.round(r.winRate * 100);
@@ -581,7 +588,7 @@ function traderCol() {
       <span class="rank">${i + 1}</span>${avatar(null, t?.name || r.address, 'sm')}
       <div style="min-width:0"><div class="nm">${esc(t?.name || short(r.address, 4))} ${wr != null ? `<span class="wr ${wr >= 50 ? 'hi' : 'lo'}">${wr}%</span>` : ''}</div><div class="sub">${r.wins}/${r.closed} won · ${r.trades} trades${r.lastTs ? ' · ' + agoText(r.lastTs) : ''}</div></div>
       <div class="rt"><div class="nm ${pnlClass(r.pnlSol)}">${r.pnlSol >= 0 ? '+' : ''}${fmtSol(r.pnlSol)} SOL</div>
-      ${t ? `<span class="sub" style="color:var(--accent)">${t.mode === 'inverse' ? 'opposite' : 'copying'}</span>` : `<button class="btn primary xs" data-copyaddr="${esc(r.address)}" style="height:22px;margin-top:2px">Copy</button>`}</div>
+      ${t ? `<span class="sub" style="color:var(--accent)">${t.mode === 'inverse' ? 'opposite' : 'copying'}</span>` : (losers ? `<button class="btn ghost xs" data-fadeaddr="${esc(r.address)}" style="height:22px;margin-top:2px" title="Do the opposite of this trader">Fade</button>` : `<button class="btn primary xs" data-copyaddr="${esc(r.address)}" style="height:22px;margin-top:2px">Copy</button>`)}</div>
     </div>`;
   }).join('');
   return `<div class="col"><div class="col-h">${icon('trophy')}<h3>Top traders</h3>${b && b.finishedAt && !scanning ? `<span class="small faint" style="margin-left:auto">updated ${agoText(b.finishedAt)}</span>` : ''}</div>${tools}<div class="col-body">${body}</div></div>`;
@@ -598,6 +605,7 @@ VIEW_BIND.discover = (root) => {
   $$('[data-sort]', root).forEach((el) => el.onclick = () => { DISC.sort = el.dataset.sort; render(); });
   $$('[data-minc]', root).forEach((el) => el.onclick = () => { DISC.minClosed = Number(el.dataset.minc); render(); });
   $$('[data-copyaddr]', root).forEach((el) => el.onclick = (e) => { e.stopPropagation(); openCopyModal({ address: el.dataset.copyaddr, name: short(el.dataset.copyaddr, 5) }); });
+  $$('[data-fadeaddr]', root).forEach((el) => el.onclick = (e) => { e.stopPropagation(); openCopyModal({ address: el.dataset.fadeaddr, name: short(el.dataset.fadeaddr, 5), presetMode: 'inverse' }); });
   const sb = $('#scanBtn', root);
   if (sb) sb.onclick = async () => { try { DISC.board = await POST('/api/discover/scan'); render(); } catch (e) { toast(e.message, 'error'); } };
 };
@@ -763,7 +771,7 @@ function openCopyModal(u, existing) {
   const st = S.settings || {};
   const t = existing || S.targets.find((x) => x.address === u.address) || {};
   let sizing = t.sizing || 'fixed';
-  let mode = t.mode || 'copy';
+  let mode = t.mode || u.presetMode || 'copy';
   modal(`
     <div class="row">${avatar(u.avatar, u.name, 'sm')}<div><h3>${existing ? 'Trader settings' : 'Follow ' + esc(u.name)}</h3><div class="small muted">${u.handle ? '@' + esc(u.handle) + ' · ' : ''}<span class="mono">${short(u.address, 5)}</span></div></div><button class="icon-btn x" data-close>${icon('x')}</button></div>
     <div class="body">

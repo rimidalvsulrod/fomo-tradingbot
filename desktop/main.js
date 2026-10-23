@@ -431,6 +431,7 @@ async function captureScreens(dir) {
   await wait(4000);
   const routes = (process.env.FOMOBOT_ROUTES || 'home,discover,copying,portfolio,activity,settings').split(',');
   for (const r of routes) {
+    if (r.startsWith('js:')) { await win.webContents.executeJavaScript(r.slice(3)); continue; }
     const [route, ref] = r.split('=');
     await win.webContents.executeJavaScript(`go(${JSON.stringify(route)}, ${JSON.stringify(ref ? { ref } : {})})`);
     await wait(Number(process.env.FOMOBOT_WAIT || 2500));
