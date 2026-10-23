@@ -73,6 +73,7 @@ function startApi(engine, { host = '0.0.0.0', port = 7420, token, name = os.host
     const [token, traders] = await Promise.all([engine.jup.token(params.mint), engine.discover.coinTraders(params.mint)]);
     return { token, traders };
   });
+  route('GET', '/api/address/:addr', async ({ params }) => ({ kind: await engine.discover.kind(params.addr) }));
   route('GET', '/api/discover/leaderboard', () => engine.discover.leaderboard());
   route('POST', '/api/discover/scan', () => engine.discover.scan());
   route('POST', '/api/rpc/test', async ({ body }) => {

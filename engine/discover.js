@@ -17,6 +17,17 @@ class Discover {
     this.statsCache = new Map();
     this.board = { status: 'idle', startedAt: null, finishedAt: null, progress: { done: 0, total: 0, step: '' }, coins: [], rows: [] };
     try { Object.assign(this.board, JSON.parse(fs.readFileSync(this.file, 'utf8')), { status: 'idle' }); } catch { /* first run */ }
+    // With a fast RPC, keep the leaderboard fresh in the background (the free one is too slow for that).
+    this.autoTimer = setInterval(() => { if (this.fast && this.board.status !== 'scanning') this.scan(); }, 45 * 60e3);
+    if (this.autoTimer.unref) this.autoTimer.unref();
+  }
+
+  // Is this address a wallet or a coin (token mint)?
+  async kind(address) {
+    const info = await this.conn.getAccountInfo(new PublicKey(address));
+    if (!info) return 'wallet';
+    const owner = info.owner.toBase58();
+    return owner === 'TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA' || owner === 'TokenzQdBNbLqP5VEhdkAS6EPFLC1PHnBqCXEpPxuEb' ? 'coin' : 'wallet';
   }
 
   get conn() { return this.engine.connection; }
@@ -55,6 +66,16 @@ class Discover {
       graduated: !!t.graduatedPool,
       twitter: t.twitter || null,
     }));
+    // Fresh-launch lists are full of copy-paste spam; keep one of each and only coins with a price.
+    const seen = new Set();
+    const clean = v.filter((c) => {
+      const k = `${(c.symbol || '').toLowerCase()}|${(c.name || '').toLowerCase()}`;
+      if (seen.has(k) || c.mcap == null) return false;
+      seen.add(k);
+      return true;
+    });
+    v.length = 0;
+    v.push(...clean);
     this.listCache.set(key, { at: Date.now(), v });
     return v;
   }
@@ -127,12 +148,15 @@ class Discover {
     }
     const picked = [...candidates.values()].filter((c) => c.volume >= 0.05).sort((a, b) => b.volume - a.volume).slice(0, plan.wallets);
     this.board.progress.total = plan.coins + picked.length;
-    const rows = [];
+    // Keep earlier results (last 24h) so the board grows with every scan.
+    const keep = (this.board.rows || []).filter((r) => r.checkedAt && Date.now() - r.checkedAt < 24 * 3600e3 && !picked.some((p) => p.address === r.address));
+    const rows = [...keep];
     for (const c of picked) {
       this.board.progress.step = `Checking ${c.address.slice(0, 4)}…${c.address.slice(-4)}'s track record…`;
       const s = await this.walletStats(c.address, plan.txPerWallet).catch(() => null);
       if (s && s.trades > 0) {
-        rows.push({ ...s, seenOn: [...c.coins] });
+        const { perCoin, ...rest } = s;
+        rows.push({ ...rest, seenOn: [...c.coins], checkedAt: Date.now() });
         this.board.rows = [...rows];
       }
       tick();
@@ -169,13 +193,17 @@ function summarize(address, txs, sigs) {
   let wins = 0;
   let closed = 0;
   let pnlSol = 0;
+  const coinsList = [];
   for (const c of perCoin.values()) {
-    if (c.bought <= 0n || c.sold * 10n < c.bought * 9n) continue;
+    const done = c.bought > 0n && c.sold * 10n >= c.bought * 9n;
+    coinsList.push({ mint: c.mint, solIn: c.solIn, solOut: c.solOut, pnlSol: c.solOut - c.solIn, closed: done, holding: c.bought > c.sold });
+    if (!done) continue;
     closed++;
     const p = c.solOut - c.solIn;
     pnlSol += p;
     if (p > 0) wins++;
   }
+  coinsList.sort((a, b) => (b.closed - a.closed) || (b.pnlSol - a.pnlSol));
   return {
     address,
     trades,
@@ -188,6 +216,7 @@ function summarize(address, txs, sigs) {
     firstTs: firstTs === Infinity ? null : firstTs,
     scanned: txs.filter(Boolean).length,
     signed,
+    perCoin: coinsList.slice(0, 25),
   };
 }
 

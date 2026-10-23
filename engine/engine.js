@@ -10,7 +10,7 @@ const { Jupiter, SOL_MINT, sleep } = require('./jupiter');
 const { keypairFromSecret, tokenBalanceRaw, parseSwap, getParsedTx, keyStr } = require('./solana');
 const { Discover, summarize } = require('./discover');
 
-const VERSION = '1.6.0';
+const VERSION = '1.7.0';
 
 const DEFAULT_SETTINGS = {
   mode: 'paper', // 'paper' simulates fills with live quotes; 'live' signs real transactions
@@ -663,6 +663,8 @@ class Engine extends EventEmitter {
     const txs = await this.discover._txs(sigs.map((s) => s.signature));
     const stats = summarize(address, txs, sigs);
     this.discover.statsCache.set(address, { at: Date.now(), v: stats });
+    const toks = await this.jup.tokens((stats.perCoin || []).map((c) => c.mint));
+    stats.perCoin = (stats.perCoin || []).map((c, i) => ({ ...c, symbol: toks[i].symbol, name: toks[i].name, icon: toks[i].icon }));
     const out = [];
     for (let j = 0; j < txs.length && out.length < limit; j++) {
       const swap = parseSwap(txs[j], address, sigs[j].signature);

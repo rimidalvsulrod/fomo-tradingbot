@@ -14,7 +14,7 @@ Copy-trade [pump.fun](https://pump.fun) traders (or any Solana wallet). Paste a 
 ## Quick start
 
 1. Run **AutoPump-Setup.exe** (SmartScreen: *More info → Run anyway*; it isn't code-signed). It installs in one click and updates itself from then on.
-2. **Discover** → browse hot pump.fun coins, see who trades them, or sort the **Leaderboard** by win rate. **Browse pump.fun** opens the real site with a *Copy this trader in AutoPump* button. You can also paste a trader's pump.fun profile link (on pump.fun, click a name in any coin's trades). Solana wallets and Solscan/GMGN/Birdeye links work too. You'll see their recent on-chain trades.
+2. **Discover** → browse hot pump.fun coins, see who trades them, or sort the **Leaderboard** by win rate. **Open pump.fun** opens it in your browser; copy any trader's address there and AutoPump offers to copy them. You can also paste a trader's pump.fun profile link (on pump.fun, click a name in any coin's trades). Solana wallets and Solscan/GMGN/Birdeye links work too. You'll see their recent on-chain trades.
 3. **Copy trader** → give them a name and choose a fixed SOL size or a % of their size.
 4. You start in **paper mode**: fills are simulated with live Jupiter quotes. When you're happy, go to **Settings → Trading wallet**, import or create a dedicated wallet, fund it, and switch to **Live**.
 

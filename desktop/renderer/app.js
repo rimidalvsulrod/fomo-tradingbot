@@ -234,25 +234,42 @@ function renderChrome() {
   const active = ['profile', 'coin'].includes(S.route) ? 'discover' : S.route;
   $('#nav').innerHTML = NAV.map(([id, label, ic]) => {
     const badge = id === 'copying' && S.targets.filter((t) => t.enabled).length ? `<span class="nav-badge">${S.targets.filter((t) => t.enabled).length}</span>` : '';
-    return `<button class="nav-item ${active === id ? 'active' : ''}" data-go="${id}">${icon(ic)}<span>${label}</span>${badge}</button>`;
+    return `<button class="nav-item ${active === id ? 'active' : ''}" data-go="${id}" title="${label}">${icon(ic)}<span>${label}</span>${badge}</button>`;
   }).join('');
 
   const c = S.conn;
   const dotCls = c.connected ? 'on' : c.error ? 'off' : 'warn';
   const t1 = c.connected ? (c.kind === 'local' ? 'Running on this PC' : 'Connected to server') : c.kind === 'remote' ? 'Server offline' : 'Starting engine…';
   const t2 = c.connected ? (c.kind === 'local' ? 'Closes to tray to keep running' : c.name) : c.error || 'Connecting…';
+  $('#connPill').title = `${t1} — ${t2}`;
   $('#connPill').innerHTML = `<span class="dot ${dotCls}"></span><div class="grow"><div class="t1">${esc(t1)}</div><div class="t2">${esc(t2)}</div></div>`;
 
   const st = S.status;
   const mode = st?.mode || 'paper';
   $('#modePill').className = `mode-pill ${mode}`;
-  $('#modePill').textContent = mode === 'live' ? '● Live trading' : 'Paper trading';
+  $('#modePill').textContent = mode === 'live' ? 'LIVE' : 'PAPER';
+  $('#modePill').title = mode === 'live' ? 'Live trading — real SOL' : 'Paper trading — simulated';
+  renderTicker();
   $('#balPill').innerHTML = `${SOL_ICON}<span class="num">${st ? fmtSol(st.solBalance ?? 0) : '—'}</span><span class="muted" style="font-weight:600">SOL</span>`;
   const running = st?.running;
   const rb = $('#runBtn');
   rb.className = `run-btn ${running ? 'on' : 'off'}`;
   rb.innerHTML = running ? `<span class="dot on" style="width:8px;height:8px"></span>Copying on` : `${icon('pause')}Paused`;
   rb.title = running ? 'Click to pause copy trading' : 'Click to resume copy trading';
+}
+
+// Scrolling strip of the best leaderboard traders, like pump.fun's top bar.
+function renderTicker() {
+  const el = $('#ticker');
+  const rows = ((DISC.board && DISC.board.rows) || []).filter((r) => r.closed > 0).sort((a, b) => b.pnlSol - a.pnlSol).slice(0, 20);
+  if (!rows.length) { el.innerHTML = `<div class="ticker-track" style="animation:none"><span class="small faint">Top traders show up here after a leaderboard scan — Discover → Top traders.</span></div>`; return; }
+  const item = (r) => `<span class="ticker-item" data-profile="wallet:${esc(r.address)}">${avatar(null, r.address, 'xs')}${esc(short(r.address, 4))}<span class="${pnlClass(r.pnlSol)}">${r.pnlSol >= 0 ? '+' : ''}${fmtSol(r.pnlSol)} SOL</span>${r.winRate != null ? `<span class="faint">${Math.round(r.winRate * 100)}%</span>` : ''}</span>`;
+  const html = rows.map(item).join('');
+  const key = rows.map((r) => r.address + r.pnlSol).join();
+  if (el.dataset.key === key) return;
+  el.dataset.key = key;
+  el.innerHTML = `<div class="ticker-track">${html}${html}</div>`;
+  $$('[data-profile]', el).forEach((x) => x.onclick = () => go('profile', { ref: x.dataset.profile }));
 }
 
 // ================= router =================
@@ -446,125 +463,137 @@ async function toggleRunning() {
 }
 
 // ---------- DISCOVER ----------
-const DISC = { tab: 'leaderboard', list: 'toptraded', coins: {}, board: null, sort: 'winRate', minClosed: 3 };
-
-VIEWS.discover = () => {
-  const d = S.discover;
-  const tab = DISC.tab;
-  return `
-  <div class="row" style="align-items:flex-end;margin-bottom:16px">
-    <div class="grow"><div class="page-title">Discover</div><div class="page-sub" style="margin:0">Find pump.fun traders worth copying — ranked by their real on-chain results.</div></div>
-    <button class="btn ghost" id="browsePump">${icon('ext')}Browse pump.fun</button>
-  </div>
-  <div class="card" style="padding:14px 16px">
-    <div class="row">
-      <div class="search-wrap grow" style="max-width:none">
-        <span class="search-ico">${icon('wallet')}</span>
-        <input id="discQ" class="mono" placeholder="Paste a pump.fun profile link or Solana wallet" value="${esc(d.q)}" autocomplete="off" spellcheck="false">
-      </div>
-      <button class="btn primary" id="discGo">${icon('search')}View wallet</button>
-    </div>
-    ${d.error ? `<div class="note warn" style="margin-top:12px">${icon('warn')}<div>${esc(d.error)}</div></div>` : ''}
-  </div>
-  <div class="card pad0" style="margin-top:16px">
-    <div class="tabs">
-      <button class="${tab === 'leaderboard' ? 'on' : ''}" data-dtab="leaderboard">${'Leaderboard'}</button>
-      <button class="${tab === 'coins' ? 'on' : ''}" data-dtab="coins">Coins</button>
-    </div>
-    ${tab === 'leaderboard' ? boardHtml() : coinsHtml()}
-  </div>`;
-};
-
-function boardHtml() {
-  const b = DISC.board;
-  if (!b) { loadBoard(); return `<div class="loading"><span class="spinner"></span>Loading leaderboard…</div>`; }
-  const scanning = b.status === 'scanning';
-  const pct = b.progress && b.progress.total ? Math.round((b.progress.done / b.progress.total) * 100) : 0;
-  let rows = (b.rows || []).filter((r) => r.closed >= DISC.minClosed);
-  const key = DISC.sort;
-  rows = rows.slice().sort((x, y) => (y[key] ?? -Infinity) - (x[key] ?? -Infinity) || (y.pnlSol - x.pnlSol));
-  const th = (k, label) => `<th class="r" style="cursor:pointer" data-sort="${k}">${label}${DISC.sort === k ? ' ▾' : ''}</th>`;
-  const head = `<div class="row" style="padding:14px 20px;flex-wrap:wrap;gap:10px">
-      <div class="grow small muted" style="line-height:1.5">${scanning
-        ? `<div class="row" style="gap:8px"><span class="spinner sm"></span><b style="color:var(--text)">Scanning… ${pct}%</b> ${esc(b.progress.step || '')}</div>`
-        : b.finishedAt ? `Traders of today's hottest pump.fun coins${b.coins && b.coins.length ? ` (${b.coins.map((c) => '$' + esc(c.symbol)).join(', ')})` : ''}. Updated ${agoText(b.finishedAt)}.` : 'Scan the hottest pump.fun coins to rank their traders by win rate.'}</div>
-      <span class="small muted">Min. finished trades</span>
-      <div class="chips">${[1, 3, 5, 10].map((n) => `<button class="chip ${DISC.minClosed === n ? 'on' : ''}" data-minc="${n}">${n}+</button>`).join('')}</div>
-      <button class="btn ${b.finishedAt ? 'ghost' : 'primary'} sm" id="scanBtn" ${scanning ? 'disabled' : ''}>${icon('refresh')}${b.finishedAt ? 'Rescan' : 'Scan now'}</button>
-    </div>
-    ${scanning ? `<div style="height:3px;background:var(--line);margin:0 20px"><div style="height:3px;width:${pct}%;background:var(--accent);transition:width .4s"></div></div>` : ''}
-    ${usingPublicRpc() ? `<div class="small faint" style="padding:8px 20px 0">On the free Solana connection the scan is small and takes several minutes. Add a free Helius key on Home for a bigger, faster leaderboard.</div>` : ''}`;
-  if (!rows.length) {
-    return head + `<div class="empty"><div class="ico">${icon('trophy')}</div><p>${scanning ? 'Traders appear here as they are checked.' : (b.rows || []).length ? `No traders with ${DISC.minClosed}+ finished trades in this scan — lower the minimum.` : 'No results yet. Hit Scan now.'}</p></div>`;
-  }
-  return head + `<table class="t" style="margin-top:6px"><thead><tr><th>#</th><th>Trader</th>${th('winRate', 'Win rate')}${th('pnlSol', 'Profit')}${th('closed', 'Finished')}${th('trades', 'Trades')}${th('lastTs', 'Last trade')}<th></th></tr></thead><tbody>
-    ${rows.map((r, i) => {
-      const t = S.targets.find((x) => x.address === r.address);
-      const wr = r.winRate == null ? null : Math.round(r.winRate * 100);
-      return `<tr>
-        <td class="faint num">${i + 1}</td>
-        <td><div class="row click" style="cursor:pointer;gap:10px" data-profile="wallet:${esc(r.address)}">${avatar(null, t?.name || r.address, 'sm')}<div><div style="font-weight:700">${esc(t?.name || short(r.address, 5))}</div><div class="small faint">${esc((r.seenOn || []).map((s) => '$' + s).join(' '))}</div></div></div></td>
-        <td class="r"><div class="row" style="justify-content:flex-end;gap:8px"><div style="width:60px;height:6px;border-radius:9px;background:var(--line2)"><div style="width:${wr ?? 0}%;height:6px;border-radius:9px;background:${(wr ?? 0) >= 50 ? 'var(--green)' : 'var(--red)'}"></div></div><b class="num">${wr == null ? '—' : wr + '%'}</b></div><div class="small faint">${r.wins}/${r.closed} won</div></td>
-        <td class="r num ${pnlClass(r.pnlSol)}"><b>${r.pnlSol >= 0 ? '+' : ''}${fmtSol(r.pnlSol)}</b><div class="small faint">SOL</div></td>
-        <td class="r num">${r.closed}</td>
-        <td class="r num muted">${r.trades}</td>
-        <td class="r muted">${r.lastTs ? agoText(r.lastTs) : '—'}</td>
-        <td class="r">${t ? `<span class="badge ok">${t.mode === 'inverse' ? 'OPPOSITE' : 'COPYING'}</span>` : `<button class="btn primary xs" data-copyaddr="${esc(r.address)}">${icon('copy')}Copy</button>`}</td>
-      </tr>`;
-    }).join('')}</tbody></table>
-    <div class="small faint" style="padding:12px 20px">Win rate = share of coins they fully sold for more SOL than they paid, within their recent trades. Past results don't guarantee future ones.</div>`;
-}
-
-function coinsHtml() {
-  const list = DISC.list;
-  const coins = DISC.coins[list];
-  if (!coins) loadCoins(list);
-  const chips = [['toptraded', 'Top traded'], ['toptrending', 'Trending'], ['recent', 'New']].map(([k, l]) => `<button class="chip ${list === k ? 'on' : ''}" data-clist="${k}">${l}</button>`).join('');
-  let body;
-  if (!coins) body = `<div class="loading"><span class="spinner"></span>Loading coins…</div>`;
-  else if (coins.error) body = `<div class="empty"><p>${esc(coins.error)}</p></div>`;
-  else if (!coins.length) body = `<div class="empty"><p>No pump.fun coins in this list right now.</p></div>`;
-  else body = `<div class="coin-grid">${coins.map((c) => `
-    <div class="coin-card" data-coin="${esc(c.mint)}">
-      ${tokImg(c.icon, c.symbol, 'lgc')}
-      <div class="grow" style="min-width:0">
-        <div class="row" style="gap:6px"><b class="ellipsis">${esc(c.name || c.symbol)}</b>${c.graduated ? '<span class="badge blue" title="Graduated from the bonding curve">GRAD</span>' : ''}</div>
-        <div class="small muted">$${esc(c.symbol)}${c.createdAt ? ' · ' + agoText(c.createdAt) : ''}</div>
-        <div class="row small" style="gap:12px;margin-top:6px"><span>MC <b>${fmtUsd(c.mcap)}</b></span>${c.change1h != null ? `<span class="${pnlClass(c.change1h)}">${fmtPct(c.change1h)}</span>` : ''}<span class="muted">Vol ${fmtUsd(c.volume1h)}</span></div>
-      </div>
-    </div>`).join('')}</div>`;
-  return `<div style="padding:14px 20px 4px" class="chips">${chips}</div>${body}`;
-}
+const DISC = { coins: {}, board: null, sort: 'winRate', minClosed: 1 };
 
 async function loadBoard() {
   try { DISC.board = await GET('/api/discover/leaderboard'); } catch (e) { DISC.board = { status: 'error', rows: [], error: e.message }; }
-  if (S.route === 'discover' && DISC.tab === 'leaderboard') render();
+  renderTicker();
+  if (S.route === 'discover') render();
 }
 
 async function loadCoins(list) {
   DISC.coins[list] = null;
   try { DISC.coins[list] = await GET(`/api/discover/coins?list=${list}`); } catch (e) { DISC.coins[list] = { error: e.message }; }
-  if (S.route === 'discover' && DISC.tab === 'coins' && DISC.list === list) render();
+  if (S.route === 'discover') render();
 }
 
-function runSearch(q) {
+// Works out whether something pasted/copied is a trader or a coin, then opens the right page.
+async function resolveAddress(raw) {
+  const text = String(raw || '').trim();
+  const coin = text.match(/pump\.fun\/(?:advanced\/)?coin\/([1-9A-HJ-NP-Za-km-z]{32,44})/);
+  if (coin) return { kind: 'coin', address: coin[1] };
+  const r = parseTraderInput(text);
+  if (!r.address) return { error: r.error };
+  if (!isSolAddr(text)) return { kind: 'wallet', address: r.address };
+  try { return { kind: (await GET(`/api/address/${r.address}`)).kind, address: r.address }; } catch { return { kind: 'wallet', address: r.address }; }
+}
+
+async function runSearch(q) {
   const d = S.discover;
   d.q = String(q || '').trim();
   if (!d.q) return;
-  const r = parseTraderInput(d.q);
-  if (r.address) { d.error = null; go('profile', { ref: 'wallet:' + r.address }); return; }
-  d.error = r.error;
-  if (S.route === 'discover') render(); else go('discover');
+  const r = await resolveAddress(d.q);
+  if (r.error) { d.error = r.error; if (S.route === 'discover') render(); else go('discover'); return; }
+  d.error = null;
+  if (r.kind === 'coin') go('coin', { ref: r.address }); else go('profile', { ref: 'wallet:' + r.address });
+}
+
+// Copied a trader or coin anywhere (e.g. pump.fun in your browser) → offer to open it here.
+async function onClipboardAddress({ address }) {
+  const r = await resolveAddress(address);
+  if (!r.address) return;
+  $('#clipBanner')?.remove();
+  const el = document.createElement('div');
+  el.id = 'clipBanner';
+  el.className = 'clip-banner';
+  const tracked = S.targets.find((t) => t.address === r.address);
+  el.innerHTML = r.kind === 'coin'
+    ? `${icon('sparkle')}<div><b>Copied a coin</b><div class="small muted mono">${esc(short(r.address, 5))}</div></div><button class="btn primary sm" data-a="open">See who trades it</button><button class="icon-btn" data-a="x">${icon('x')}</button>`
+    : `${icon('wallet')}<div><b>Copied a trader</b><div class="small muted mono">${esc(short(r.address, 5))}</div></div><button class="btn ghost sm" data-a="open">View</button>${tracked ? '' : '<button class="btn primary sm" data-a="copy">Copy trader</button>'}<button class="icon-btn" data-a="x">${icon('x')}</button>`;
+  document.body.appendChild(el);
+  const t = setTimeout(() => el.remove(), 20000);
+  el.onclick = (e) => {
+    const a = e.target.closest('[data-a]')?.dataset.a;
+    if (!a) return;
+    clearTimeout(t); el.remove();
+    if (a === 'open') go(r.kind === 'coin' ? 'coin' : 'profile', { ref: r.kind === 'coin' ? r.address : 'wallet:' + r.address });
+    if (a === 'copy') openCopyModal({ address: r.address, name: short(r.address, 5) });
+  };
+}
+
+VIEWS.discover = () => {
+  const d = S.discover;
+  return `
+  <div class="row" style="margin-top:14px;gap:10px;flex-wrap:wrap">
+    <div class="page-title" style="margin:0 8px 0 0">Discover</div>
+    <div class="search-wrap grow" style="max-width:560px">
+      <span class="search-ico">${icon('wallet')}</span>
+      <input id="discQ" class="mono" placeholder="Paste a pump.fun profile link, wallet or coin" value="${esc(d.q)}" autocomplete="off" spellcheck="false">
+    </div>
+    <button class="btn primary" id="discGo">${icon('search')}Open</button>
+    <button class="btn ghost" id="browsePump" title="Opens pump.fun in your browser. Copy a trader's address there and AutoPump picks it up.">${icon('ext')}Open pump.fun</button>
+  </div>
+  ${d.error ? `<div class="note warn" style="margin-top:10px">${icon('warn')}<div>${esc(d.error)}</div></div>` : ''}
+  <div class="board">
+    ${coinCol('trend', 'Trending', 'bolt', [['toptraded', 'Top traded'], ['toptrending', 'Trending']])}
+    ${traderCol()}
+    ${coinCol('new', 'New coins', 'sparkle', [['recent', 'Just launched']])}
+  </div>`;
+};
+
+function coinCol(id, title, ic, lists) {
+  const key = DISC['list_' + id] || lists[0][0];
+  const coins = DISC.coins[key];
+  if (coins === undefined) loadCoins(key);
+  const tools = lists.length > 1 ? `<div class="col-tools">${lists.map(([k, l]) => `<button class="pill ${k === key ? 'on' : ''}" data-clist="${id}:${k}">${l}</button>`).join('')}</div>` : '<div class="col-tools"></div>';
+  let body;
+  if (!coins) body = `<div class="loading"><span class="spinner"></span></div>`;
+  else if (coins.error) body = `<div class="empty"><p>${esc(coins.error)}</p></div>`;
+  else if (!coins.length) body = `<div class="empty"><p>Nothing right now.</p></div>`;
+  else body = coins.slice(0, 40).map((c) => `
+    <div class="rowi" data-coin="${esc(c.mint)}">
+      ${tokImg(c.icon, c.symbol, 'sm')}
+      <div style="min-width:0"><div class="nm ellipsis" style="max-width:160px">${esc(c.symbol)} ${c.graduated ? '<span class="badge blue" style="height:16px;font-size:9.5px">GRAD</span>' : ''}</div><div class="sub ellipsis" style="max-width:170px">${esc(c.name || '')}${c.createdAt && id === 'new' ? ' · ' + agoText(c.createdAt) : ''}</div></div>
+      <div class="rt"><div class="nm">${fmtUsd(c.mcap)}</div>${c.change1h != null ? `<div class="sub ${pnlClass(c.change1h)}">${fmtPct(c.change1h)}</div>` : ''}</div>
+    </div>`).join('');
+  return `<div class="col"><div class="col-h">${icon(ic)}<h3>${title}</h3></div>${tools}<div class="col-body">${body}</div></div>`;
+}
+
+function traderCol() {
+  const b = DISC.board;
+  if (!b) loadBoard();
+  const scanning = b && b.status === 'scanning';
+  const pct = scanning && b.progress.total ? Math.round((b.progress.done / b.progress.total) * 100) : 0;
+  let rows = ((b && b.rows) || []).filter((r) => r.closed >= DISC.minClosed);
+  rows = rows.slice().sort((x, y) => (y[DISC.sort] ?? -Infinity) - (x[DISC.sort] ?? -Infinity) || (y.pnlSol - x.pnlSol));
+  const sortPill = (k, l) => `<button class="pill ${DISC.sort === k ? 'on' : ''}" data-sort="${k}">${l}</button>`;
+  const tools = `<div class="col-tools">${sortPill('winRate', 'Win rate')}${sortPill('pnlSol', 'Profit')}${sortPill('closed', 'Trades')}
+    <span class="faint small" style="margin-left:6px">min</span>${[1, 3, 5].map((n) => `<button class="pill ${DISC.minClosed === n ? 'on' : ''}" data-minc="${n}">${n}+</button>`).join('')}
+    <button class="pill" id="scanBtn" style="margin-left:auto" ${scanning ? 'disabled' : ''}>${scanning ? `<span class="spinner sm"></span> ${pct}%` : icon('refresh') + ' Scan'}</button></div>
+    ${scanning ? `<div class="small faint" style="padding:0 14px 8px">${esc(b.progress.step || '')}</div>` : ''}`;
+  let body;
+  if (!b) body = `<div class="loading"><span class="spinner"></span></div>`;
+  else if (!rows.length) body = `<div class="empty" style="padding:28px 18px"><div class="ico">${icon('trophy')}</div><p>${scanning ? 'Traders appear here as they are checked.' : (b.rows || []).length ? 'Nobody with that many finished trades yet — lower the minimum.' : 'Hit Scan to rank the traders of today\'s hottest pump.fun coins by win rate.'}${usingPublicRpc() ? '<br><span class="faint">A scan takes ~10 minutes on the free connection; a free Helius key (Home) makes it fast and keeps it fresh automatically.</span>' : ''}</p></div>`;
+  else body = rows.map((r, i) => {
+    const t = S.targets.find((x) => x.address === r.address);
+    const wr = r.winRate == null ? null : Math.round(r.winRate * 100);
+    return `<div class="rowi" data-profile="wallet:${esc(r.address)}">
+      <span class="rank">${i + 1}</span>${avatar(null, t?.name || r.address, 'sm')}
+      <div style="min-width:0"><div class="nm">${esc(t?.name || short(r.address, 4))} ${wr != null ? `<span class="wr ${wr >= 50 ? 'hi' : 'lo'}">${wr}%</span>` : ''}</div><div class="sub">${r.wins}/${r.closed} won · ${r.trades} trades${r.lastTs ? ' · ' + agoText(r.lastTs) : ''}</div></div>
+      <div class="rt"><div class="nm ${pnlClass(r.pnlSol)}">${r.pnlSol >= 0 ? '+' : ''}${fmtSol(r.pnlSol)} SOL</div>
+      ${t ? `<span class="sub" style="color:var(--accent)">${t.mode === 'inverse' ? 'opposite' : 'copying'}</span>` : `<button class="btn primary xs" data-copyaddr="${esc(r.address)}" style="height:22px;margin-top:2px">Copy</button>`}</div>
+    </div>`;
+  }).join('');
+  return `<div class="col"><div class="col-h">${icon('trophy')}<h3>Top traders</h3>${b && b.finishedAt && !scanning ? `<span class="small faint" style="margin-left:auto">updated ${agoText(b.finishedAt)}</span>` : ''}</div>${tools}<div class="col-body">${body}</div></div>`;
 }
 
 VIEW_BIND.discover = (root) => {
   const q = $('#discQ', root);
   q.addEventListener('keydown', (e) => { if (e.key === 'Enter') runSearch(q.value); });
-  q.addEventListener('paste', () => setTimeout(() => { if (parseTraderInput(q.value).address) runSearch(q.value); }, 0));
+  q.addEventListener('paste', () => setTimeout(() => runSearch(q.value), 0));
   $('#discGo', root).onclick = () => runSearch(q.value);
-  $('#browsePump', root).onclick = () => bot.pump.open();
-  $$('[data-dtab]', root).forEach((b) => b.onclick = () => { DISC.tab = b.dataset.dtab; render(); });
-  $$('[data-clist]', root).forEach((b) => b.onclick = () => { DISC.list = b.dataset.clist; loadCoins(DISC.list); render(); });
+  $('#browsePump', root).onclick = () => { bot.pump.open(); toast('pump.fun opened in your browser — copy a trader\'s address (the copy icon next to it) and AutoPump will pick it up', 'info', 9000); };
+  $$('[data-clist]', root).forEach((b) => b.onclick = () => { const [col, list] = b.dataset.clist.split(':'); DISC['list_' + col] = list; render(); });
   $$('[data-coin]', root).forEach((el) => el.onclick = () => go('coin', { ref: el.dataset.coin }));
   $$('[data-sort]', root).forEach((el) => el.onclick = () => { DISC.sort = el.dataset.sort; render(); });
   $$('[data-minc]', root).forEach((el) => el.onclick = () => { DISC.minClosed = Number(el.dataset.minc); render(); });
@@ -578,7 +607,7 @@ const coinCache = new Map();
 VIEWS.coin = () => {
   const mint = S.params.ref;
   const c = coinCache.get(mint);
-  const listed = Object.values(DISC.coins).flat().find((x) => x && x.mint === mint);
+  const listed = Object.values(DISC.coins).filter(Array.isArray).flat().find((x) => x && x.mint === mint);
   if (!c) setTimeout(() => loadCoin(mint), 0);
   const tok = (c && c.token) || listed || { symbol: '…', name: '' };
   const traders = c && c.traders;
@@ -636,8 +665,8 @@ VIEWS.profile = () => {
   if (!p) { setTimeout(() => loadProfile(ref), 0); return `<div class="loading"><span class="spinner"></span>Loading wallet…</div>`; }
   const u = p.user;
   const copying = S.targets.find((t) => t.address === u.address);
-  return `
-  <button class="btn ghost sm" data-go="discover" style="margin-bottom:12px">${icon('arrowL')}Back</button>
+  const main = `
+  <button class="btn ghost sm" data-go="discover" style="margin:14px 0 10px">${icon('arrowL')}Back</button>
   <div class="card pad0">
     <div class="cover" style="height:110px"></div>
     <div class="prof">
@@ -653,7 +682,7 @@ VIEWS.profile = () => {
       <h2>${esc(u.name)}</h2>
       <div class="handle mono">${esc(u.address)}</div>
       <div class="prof-stats">
-        ${p.scan && p.scan.stats ? (() => { const st = p.scan.stats; return `
+        ${(p.scan && p.scan.stats) || boardRowFor(u.address) ? (() => { const st = (p.scan && p.scan.stats) || boardRowFor(u.address); return `
         <div><div class="k">Win rate</div><div class="v ${st.winRate == null ? '' : st.winRate >= 0.5 ? 'up' : 'down'}">${st.winRate == null ? '—' : Math.round(st.winRate * 100) + '%'}</div><div class="small faint">${st.wins}/${st.closed} finished trades won</div></div>
         <div><div class="k">Profit (finished)</div><div class="v ${pnlClass(st.pnlSol)}">${st.pnlSol >= 0 ? '+' : ''}${fmtSol(st.pnlSol)} SOL</div></div>
         <div><div class="k">Coins traded</div><div class="v">${st.coins}</div></div>`; })() : p.swaps ? '' : `<div><div class="k">Win rate</div><div class="v"><span class="spinner sm"></span></div></div>`}
@@ -664,6 +693,18 @@ VIEWS.profile = () => {
     <div class="tabs"><button class="on">Recent trades</button></div>
     ${profileTrades(p)}
   </div>`;
+  const top = p.scan && p.scan.stats && p.scan.stats.perCoin;
+  const side = `<div class="col" style="max-height:none">
+    <div class="col-h">${icon('trophy')}<h3>Top trades</h3><span class="small faint" style="margin-left:auto">profit per coin</span></div>
+    <div class="col-body">${!p.scan ? `<div class="loading"><span class="spinner"></span></div>`
+      : !top || !top.length ? `<div class="empty" style="padding:24px"><p>No coin trades in their recent history.</p></div>`
+      : top.map((c, i) => `<div class="rowi" data-open="${esc(tokenUrl(c.mint))}">
+          <span class="rank">${i + 1}</span>${tokImg(c.icon, c.symbol, 'sm')}
+          <div style="min-width:0"><div class="nm ellipsis" style="max-width:120px">${esc(c.symbol || short(c.mint))}</div><div class="sub">${c.closed ? 'sold' : c.holding ? 'still holding' : 'partly sold'}</div></div>
+          <div class="rt"><div class="nm ${c.closed ? pnlClass(c.pnlSol) : ''}">${c.closed ? (c.pnlSol >= 0 ? '+' : '') + fmtSol(c.pnlSol) + ' SOL' : '—'}</div><div class="sub">Spent ${fmtSol(c.solIn)} SOL${c.closed && c.solIn > 0 ? ` · <span class="${pnlClass(c.pnlSol)}">${fmtPct((c.pnlSol / c.solIn) * 100)}</span>` : ''}</div></div>
+        </div>`).join('')}</div>
+  </div>`;
+  return `<div class="prof-grid"><div>${main}</div>${side}</div>`;
 };
 
 function profileTrades(p) {
@@ -713,6 +754,8 @@ VIEW_BIND.profile = (root) => {
     try { await PUT(`/api/targets/${copying.id}`, { enabled: !copying.enabled }); await loadTargets(); render(); } catch (e) { toast(e.message, 'error'); }
   };
 };
+
+function boardRowFor(address) { return ((DISC.board && DISC.board.rows) || []).find((r) => r.address === address) || null; }
 
 // ---------- COPY MODAL ----------
 function openCopyModal(u, existing) {
@@ -1021,6 +1064,7 @@ VIEWS.settings = () => {
       <div class="card">
         <div class="card-h">${icon('info')}<h3>App</h3><span class="muted small" style="margin-left:auto">v${esc(S.info.version || '')}</span></div>
         <div class="toggle-row"><div class="grow"><div class="t">Keep running in the tray</div><div class="d">Closing the window keeps the local engine copying</div></div><label class="switch"><input type="checkbox" id="trayToggle" ${S.info.closeToTray ? 'checked' : ''}><span></span></label></div>
+        <div class="toggle-row"><div class="grow"><div class="t">Pick up copied traders</div><div class="d">When you copy a wallet, pump.fun profile or coin link anywhere (like pump.fun in your browser), offer to open it here. Checked on this PC only — nothing is sent anywhere.</div></div><label class="switch"><input type="checkbox" id="clipToggle" ${S.info.clipboardWatch !== false ? 'checked' : ''}><span></span></label></div>
         <div class="small faint" style="margin-top:10px;line-height:1.5">Unofficial tool, not affiliated with pump.fun or Fomo Labs. Copy trading is risky — memecoins can go to zero in minutes. Nothing here is financial advice.</div>
       </div>
     </div>
@@ -1092,6 +1136,7 @@ VIEW_BIND.settings = (root) => {
   };
   b('saveRisk', () => save(['defaultBuySol', 'maxTradeSol', 'dailyLimitSol', 'minReserveSol', 'minSourceTradeSol', 'maxOpenPositions', 'takeProfitPct', 'stopLossPct', 'trailingStopPct', 'buyOncePerToken']));
   b('saveExec', () => save(['router', 'slippageBps', 'maxPriorityFeeSol', 'maxSignalAgeSec', 'pollMs', 'paperStartSol', 'rpcUrl', 'jupiterApiKey']));
+  const ct = $('#clipToggle', root); if (ct) ct.onchange = async () => { await bot.setClipboardWatch(ct.checked); S.info.clipboardWatch = ct.checked; };
   const tt = $('#trayToggle', root); if (tt) tt.onchange = async () => { await bot.setCloseToTray(tt.checked); S.info.closeToTray = tt.checked; };
 };
 
@@ -1156,6 +1201,7 @@ $('#runBtn').onclick = toggleRunning;
 $('.search-ico').innerHTML = icon('search');
 const gs = $('#globalSearch');
 gs.addEventListener('keydown', (e) => { if (e.key === 'Enter') { runSearch(gs.value); gs.blur(); } });
+gs.addEventListener('paste', () => setTimeout(() => { if (gs.value.trim().length >= 32) { runSearch(gs.value); gs.blur(); } }, 0));
 document.addEventListener('keydown', (e) => { if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'k') { e.preventDefault(); gs.focus(); gs.select(); } });
 
 function renderUpdate(u) {
@@ -1170,6 +1216,7 @@ bot.always.onState((a) => { S.always = a; if (S.route === 'settings' && !$('#mod
 bot.update.state().then(renderUpdate);
 
 bot.onEvent(onEngineEvent);
+bot.onClipboard(onClipboardAddress);
 bot.onNav((n) => { if (n && n.route) go(n.route, { ref: n.ref }); });
 bot.conn.onState((s) => { const was = S.conn.connected; S.conn = s; renderChrome(); if (s.connected && !was) loadAll().then(render); if (S.route === 'settings') soon('render', render); });
 

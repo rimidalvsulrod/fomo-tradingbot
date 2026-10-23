@@ -288,32 +288,36 @@ function handle(ch, fn) {
   });
 }
 
-handle('app:info', () => ({ version: VERSION, platform: process.platform, closeToTray: cfg.closeToTray }));
+handle('app:info', () => ({ version: VERSION, platform: process.platform, closeToTray: cfg.closeToTray, clipboardWatch: cfg.clipboardWatch !== false }));
 handle('app:setCloseToTray', (v) => { cfg.closeToTray = !!v; saveCfg(); return { ok: true }; });
-// ---------- Browse pump.fun ----------
-let pumpWin = null;
+// ---------- pump.fun in your own browser + clipboard pick-up ----------
+// pump.fun sits behind Cloudflare, which only works reliably in a normal browser, so open it there.
+// When you copy a trader's address or profile link, the app offers to open/copy them.
 handle('pump:open', (url) => {
-  const start = typeof url === 'string' && /^https:\/\/pump\.fun\//.test(url) ? url : 'https://pump.fun/';
-  if (pumpWin && !pumpWin.isDestroyed()) { pumpWin.show(); pumpWin.focus(); if (url) pumpWin.loadURL(start); return { ok: true }; }
-  pumpWin = new BrowserWindow({
-    width: 1300, height: 880, title: 'pump.fun — AutoPump', autoHideMenuBar: true, backgroundColor: '#0e0e10',
-    icon: path.join(__dirname, '..', 'assets', 'icon.ico'),
-    webPreferences: { partition: 'persist:pumpfun', sandbox: true, contextIsolation: true, preload: path.join(__dirname, 'pump-preload.js') },
-  });
-  pumpWin.webContents.setWindowOpenHandler(({ url: u }) => {
-    try { if (new URL(u).hostname === 'pump.fun') { pumpWin.loadURL(u); return { action: 'deny' }; } } catch { /* external */ }
-    openExternal(u);
-    return { action: 'deny' };
-  });
-  pumpWin.on('closed', () => { pumpWin = null; });
-  pumpWin.loadURL(start);
+  openExternal(typeof url === 'string' && /^https:\/\/pump\.fun\//.test(url) ? url : 'https://pump.fun/');
   return { ok: true };
 });
-ipcMain.on('pump:handoff', (e, msg) => {
-  if (!pumpWin || e.sender !== pumpWin.webContents || !msg || !/^[1-9A-HJ-NP-Za-km-z]{32,44}$/.test(String(msg.id))) return;
-  showWindow();
-  send('app:nav', msg.kind === 'coin' ? { route: 'coin', ref: msg.id } : { route: 'profile', ref: 'wallet:' + msg.id });
-});
+
+const ADDR_RE = /^[1-9A-HJ-NP-Za-km-z]{32,44}$/;
+let lastClip = null;
+function clipboardTick() {
+  if (cfg.clipboardWatch === false) return;
+  let text = '';
+  try { text = clipboard.readText().trim(); } catch { return; }
+  if (text === lastClip) return;
+  const first = lastClip === null;
+  lastClip = text;
+  if (first || text.length > 300) return; // ignore whatever was already on the clipboard at launch
+  let address = null;
+  if (ADDR_RE.test(text)) address = text;
+  else {
+    const m = text.match(/pump\.fun\/(profile|coin)\/([1-9A-HJ-NP-Za-km-z]{32,44})/);
+    if (m) address = m[2];
+  }
+  if (address) send('app:clipboard', { address });
+}
+setInterval(clipboardTick, 1200);
+handle('app:setClipboardWatch', (v) => { cfg.clipboardWatch = !!v; saveCfg(); return { ok: true }; });
 
 handle('app:247:get', () => state247());
 handle('app:247:set', async (patch = {}) => {

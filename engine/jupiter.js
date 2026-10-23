@@ -79,6 +79,20 @@ class Jupiter {
     return v;
   }
 
+  // Token info for many mints in one request (fills the same cache as token()).
+  async tokens(mints) {
+    const need = [...new Set(mints)].filter((m) => !this.tokenCache.has(m));
+    for (let i = 0; i < need.length; i += 50) {
+      try {
+        const list = await this._fetch(`/tokens/v2/search?query=${need.slice(i, i + 50).join(',')}`);
+        for (const t of Array.isArray(list) ? list : []) {
+          this.tokenCache.set(t.id, { at: Date.now(), v: { mint: t.id, symbol: t.symbol, name: t.name, icon: t.icon, decimals: t.decimals, usdPrice: t.usdPrice, mcap: t.mcap, liquidity: t.liquidity, verified: !!t.isVerified } });
+        }
+      } catch (e) { this.log.debug(`batch token lookup failed: ${e.message}`); }
+    }
+    return Promise.all(mints.map((m) => this.token(m)));
+  }
+
   async prices(mints) {
     const out = {};
     const need = [];
