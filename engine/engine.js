@@ -10,12 +10,12 @@ const { Jupiter, SOL_MINT, sleep } = require('./jupiter');
 const { keypairFromSecret, tokenBalanceRaw, parseSwap, getParsedTx, keyStr } = require('./solana');
 const { Discover, summarize } = require('./discover');
 
-const VERSION = '1.8.0';
+const VERSION = '1.9.0';
 
 const DEFAULT_SETTINGS = {
   mode: 'paper', // 'paper' simulates fills with live quotes; 'live' signs real transactions
   running: true,
-  rpcUrl: 'https://api.mainnet-beta.solana.com',
+  rpcUrl: 'https://solana-rpc.publicnode.com', // free, no key, far higher limits than api.mainnet-beta
   jupiterApiKey: '',
   router: 'ultra', // 'ultra' | 'metis'
   pollMs: 4000,
@@ -75,6 +75,12 @@ class Engine extends EventEmitter {
     this.exiting = new Set();
     this.status = { rpcOk: null, lastPollAt: 0, lastError: null, solBalance: null };
     this.jup = new Jupiter(() => this.settings, this.logger());
+    // Installs that still use the old rate-limited default move to the faster free endpoint.
+    if (this.settings.rpcUrl === 'https://api.mainnet-beta.solana.com' && !this.settings.rpcMigrated) {
+      this.settings.rpcUrl = DEFAULT_SETTINGS.rpcUrl;
+      this.settings.rpcMigrated = true;
+      this.store.save();
+    }
     this._loadWallet();
     this._connect();
     this.discover = new Discover(this);

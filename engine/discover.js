@@ -3,7 +3,7 @@
 // trending/new coins, and on-chain transactions for who traded them and how well they did.
 const fs = require('fs');
 const path = require('path');
-const { PublicKey } = require('@solana/web3.js');
+const { Connection, PublicKey } = require('@solana/web3.js');
 const { getParsedTx, keyStr, parseSwap } = require('./solana');
 const { sleep } = require('./jupiter');
 
@@ -30,19 +30,43 @@ class Discover {
     return owner === 'TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA' || owner === 'TokenzQdBNbLqP5VEhdkAS6EPFLC1PHnBqCXEpPxuEb' ? 'coin' : 'wallet';
   }
 
-  get conn() { return this.engine.connection; }
+  // Own connection for scans: no built-in 429 backoff (we pace requests ourselves instead).
+  get conn() {
+    const url = this.engine.settings.rpcUrl;
+    if (!this._conn || this._connUrl !== url) {
+      this._conn = new Connection(url, { commitment: 'confirmed', disableRetryOnRateLimit: true });
+      this._connUrl = url;
+    }
+    return this._conn;
+  }
+
+  // Steady request pacing: bursts get refused and cost more time in backoff than they save.
+  async _slot() {
+    const perSec = this.fast ? 22 : 2;
+    const now = Date.now();
+    this._nextAt = Math.max(now, this._nextAt || 0) + 1000 / perSec;
+    const wait = this._nextAt - 1000 / perSec - now;
+    if (wait > 0) await sleep(wait);
+  }
+
+  async _call(fn) {
+    for (let attempt = 0; ; attempt++) {
+      await this._slot();
+      try { return await fn(); } catch (e) {
+        if (attempt >= 3 || !/429|Too many|timed out|fetch failed/i.test(e.message)) throw e;
+        await sleep(800 * (attempt + 1));
+      }
+    }
+  }
+
+  _sigs(address, limit) {
+    return this._call(() => this.conn.getSignaturesForAddress(new PublicKey(address), { limit }));
+  }
   get fast() { return !/api\.mainnet-beta\.solana\.com/.test(this.engine.settings.rpcUrl); }
 
   // Fetches transactions in small paced batches; the free public RPC rate-limits bigger bursts.
-  async _txs(signatures) {
-    const step = this.fast ? 8 : 2;
-    const out = [];
-    for (let i = 0; i < signatures.length; i += step) {
-      if (i && !this.fast) await sleep(250);
-      const batch = signatures.slice(i, i + step);
-      out.push(...(await Promise.all(batch.map((s) => getParsedTx(this.conn, s).catch(() => null)))));
-    }
-    return out;
+  _txs(signatures) {
+    return Promise.all(signatures.map((s) => this._call(() => getParsedTx(this.conn, s)).catch(() => null)));
   }
 
   async coins(list = 'toptraded') {
@@ -83,7 +107,7 @@ class Discover {
   // Recent traders of one coin, grouped by wallet.
   async coinTraders(mint, maxTx = 40) {
     new PublicKey(mint);
-    const sigs = (await this.conn.getSignaturesForAddress(new PublicKey(mint), { limit: maxTx })).filter((s) => !s.err);
+    const sigs = (await this._sigs(mint, maxTx)).filter((s) => !s.err);
     const txs = await this._txs(sigs.map((s) => s.signature));
     const byWallet = new Map();
     txs.forEach((tx, i) => {
@@ -108,7 +132,7 @@ class Discover {
   async walletStats(address, maxTx = 60) {
     const hit = this.statsCache.get(address);
     if (hit && Date.now() - hit.at < 20 * 60e3) return hit.v;
-    const sigs = (await this.conn.getSignaturesForAddress(new PublicKey(address), { limit: maxTx })).filter((s) => !s.err);
+    const sigs = (await this._sigs(address, maxTx)).filter((s) => !s.err);
     const txs = await this._txs(sigs.map((s) => s.signature));
     const v = summarize(address, txs, sigs);
     this.statsCache.set(address, { at: Date.now(), v });
@@ -120,7 +144,7 @@ class Discover {
   scan() {
     if (this.board.status === 'scanning') return this.board;
     const big = this.fast;
-    const plan = { coins: big ? 6 : 3, txPerCoin: big ? 40 : 25, wallets: big ? 30 : 12, txPerWallet: big ? 60 : 35 };
+    const plan = { coins: big ? 8 : 3, txPerCoin: big ? 80 : 25, wallets: big ? 55 : 12, txPerWallet: big ? 50 : 35 };
     this.board = { ...this.board, status: 'scanning', startedAt: Date.now(), plan, progress: { done: 0, total: plan.coins + plan.wallets, step: 'Finding hot pump.fun coins…' } };
     this._runScan(plan).catch((e) => {
       this.board.status = 'error';
@@ -135,9 +159,14 @@ class Discover {
     const coins = (await this.coins('toptraded')).slice(0, plan.coins);
     this.board.coins = coins.map((c) => ({ mint: c.mint, symbol: c.symbol, icon: c.icon }));
     const candidates = new Map();
-    for (const c of coins) {
+    // Two coins at a time keeps the request rate comfortably inside the free endpoint's limits.
+    const tradersByCoin = [];
+    for (let i = 0; i < coins.length; i += 2) {
+      tradersByCoin.push(...(await Promise.all(coins.slice(i, i + 2).map((c) => this.coinTraders(c.mint, plan.txPerCoin).catch(() => [])))));
+    }
+    for (const [ci, c] of coins.entries()) {
       this.board.progress.step = `Reading who trades $${c.symbol}…`;
-      const traders = await this.coinTraders(c.mint, plan.txPerCoin).catch(() => []);
+      const traders = tradersByCoin[ci];
       for (const t of traders) {
         const r = candidates.get(t.address) || { address: t.address, volume: 0, coins: new Set() };
         r.volume += t.boughtSol + t.soldSol;
@@ -151,16 +180,23 @@ class Discover {
     // Keep earlier results (last 24h) so the board grows with every scan.
     const keep = (this.board.rows || []).filter((r) => r.checkedAt && Date.now() - r.checkedAt < 24 * 3600e3 && !picked.some((p) => p.address === r.address));
     const rows = [...keep];
-    for (const c of picked) {
-      this.board.progress.step = `Checking ${c.address.slice(0, 4)}…${c.address.slice(-4)}'s track record…`;
-      const s = await this.walletStats(c.address, plan.txPerWallet).catch(() => null);
-      if (s && s.trades > 0) {
-        const { perCoin, ...rest } = s;
-        rows.push({ ...rest, seenOn: [...c.coins], checkedAt: Date.now() });
-        this.board.rows = [...rows];
+    // Several wallets at once on a fast connection; one at a time on the free rate-limited one.
+    const lanes = this.fast ? 6 : 1;
+    let next = 0;
+    const worker = async () => {
+      while (next < picked.length) {
+        const c = picked[next++];
+        this.board.progress.step = `Checking traders' track records…`;
+        const s = await this.walletStats(c.address, plan.txPerWallet).catch(() => null);
+        if (s && s.trades > 0) {
+          const { perCoin, ...rest } = s;
+          rows.push({ ...rest, seenOn: [...c.coins], checkedAt: Date.now() });
+          this.board.rows = [...rows];
+        }
+        tick();
       }
-      tick();
-    }
+    };
+    await Promise.all(Array.from({ length: lanes }, worker));
     this.board.status = 'done';
     this.board.finishedAt = Date.now();
     this.board.progress.step = '';
