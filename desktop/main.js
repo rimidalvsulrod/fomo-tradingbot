@@ -5,7 +5,7 @@ const fs = require('fs');
 const os = require('os');
 const dgram = require('dgram');
 const WebSocket = require('ws');
-const { Engine, startApi, secure, DISCOVERY_PORT, DISCOVERY_MAGIC, VERSION } = require('../engine');
+const { Engine, startApi, secure, DISCOVERY_PORT, DISCOVERY_MAGIC, VERSION, MAINTENANCE } = require('../engine');
 
 app.setAppUserModelId('com.fomotradingbot.desktop');
 // Data folder stays 'fomo-tradingbot' from before the rename so settings, wallet and traders carry over.
@@ -79,6 +79,8 @@ async function startLocalEngine() {
 // ---------- 24/7 mode ----------
 let awakeId = null;
 function applyRun247() {
+  // While AutoPump is in maintenance it must not start with Windows or keep the PC awake.
+  if (MAINTENANCE && cfg.run247) { cfg.run247 = false; saveCfg(); }
   const on = !!cfg.run247;
   if (app.isPackaged) app.setLoginItemSettings({ openAtLogin: on, args: on ? ['--hidden'] : [] });
   if (on && awakeId === null) awakeId = powerSaveBlocker.start('prevent-app-suspension');

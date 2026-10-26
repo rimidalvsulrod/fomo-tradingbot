@@ -5,7 +5,7 @@ const fs = require('fs');
 const os = require('os');
 const path = require('path');
 const { spawn, exec } = require('child_process');
-const { Engine, startApi, lanAddresses, secure, VERSION } = require('../engine');
+const { Engine, startApi, lanAddresses, secure, VERSION, MAINTENANCE } = require('../engine');
 const { downloadUpdate, swapAndRestart, cleanupOld } = require('./update');
 
 const C = {
@@ -37,7 +37,11 @@ async function main() {
 
   api = await startApiWithRetry();
   engine.start();
-  if (!args['allow-sleep']) keepAwake = preventSleep();
+  if (MAINTENANCE) {
+    // Maintenance: stop launching with Windows and don't hold the PC awake.
+    try { if (startupEnabled()) { fs.unlinkSync(startupFile()); line(C.yellow, 'warn', 'Removed "start with Windows" while AutoPump is in maintenance'); } } catch { /* ignore */ }
+    console.log(`  ${C.yellow}${C.bold}AutoPump is temporarily offline for maintenance.${C.reset} ${C.gray}No trades will be made. You can close this window.${C.reset}\n`);
+  } else if (!args['allow-sleep']) keepAwake = preventSleep();
 
   printConnectInfo();
   printHelp();

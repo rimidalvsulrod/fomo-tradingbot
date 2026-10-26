@@ -10,7 +10,10 @@ const { Jupiter, SOL_MINT, sleep } = require('./jupiter');
 const { keypairFromSecret, tokenBalanceRaw, parseSwap, getParsedTx, keyStr } = require('./solana');
 const { Discover, summarize } = require('./discover');
 
-const VERSION = '1.9.0';
+const VERSION = '1.10.0';
+// Maintenance switch: no copying, no automatic or new trades, no scans. Manual sells stay available so
+// open positions can still be closed. Flip back to false in a later release to re-enable.
+const MAINTENANCE = true;
 
 const DEFAULT_SETTINGS = {
   mode: 'paper', // 'paper' simulates fills with live quotes; 'live' signs real transactions
@@ -157,6 +160,14 @@ class Engine extends EventEmitter {
   }
 
   start() {
+    if (MAINTENANCE) {
+      this.settings.running = false;
+      this.store.save();
+      this._log('warn', 'AutoPump is temporarily offline for maintenance — copy trading and automatic trades are switched off.');
+      this.balanceTimer = setInterval(() => this.refreshBalance(), 60000);
+      this.refreshBalance();
+      return;
+    }
     this._log('info', `Engine v${VERSION} started (${this.mode === 'live' ? 'LIVE trading' : 'paper trading'})`);
     this._loop();
     this.balanceTimer = setInterval(() => this.refreshBalance(), 30000);
@@ -186,6 +197,7 @@ class Engine extends EventEmitter {
   }
 
   setRunning(on) {
+    if (on && MAINTENANCE) throw httpError(503, 'AutoPump is temporarily offline for maintenance.');
     this.settings.running = !!on;
     this._log(on ? 'success' : 'warn', on ? 'Copy trading resumed' : 'Copy trading paused');
     this._changed('status');
@@ -365,6 +377,7 @@ class Engine extends EventEmitter {
   }
 
   async _handleSignal(t, swap, age) {
+    if (MAINTENANCE) return;
     const target = this.s.targets.find((x) => x.id === t.id) || t;
     const solPx = swap.stableDelta ? await this.jup.solPrice() : 0;
     const quoteSpentSol = -swap.solDelta + (solPx ? -swap.stableDelta / solPx : 0);
@@ -546,6 +559,7 @@ class Engine extends EventEmitter {
   }
 
   manualBuy(mint, sol) {
+    if (MAINTENANCE) throw httpError(503, 'AutoPump is temporarily offline for maintenance.');
     sol = Number(sol);
     if (!(sol > 0)) throw httpError(400, 'Enter an amount of SOL');
     try { new PublicKey(mint); } catch { throw httpError(400, 'Invalid token address'); }
@@ -635,6 +649,7 @@ class Engine extends EventEmitter {
     const trades = this.s.trades.filter((t) => t.mode === this.mode && t.status === 'success');
     return {
       app: 'fomo-tradingbot',
+      maintenance: MAINTENANCE,
       version: VERSION,
       uptimeSec: Math.round((Date.now() - this.startedAt) / 1000),
       mode: this.mode,
@@ -722,4 +737,4 @@ function fmtAmt(n) {
 }
 function httpError(status, message) { const e = new Error(message); e.status = status; return e; }
 
-module.exports = { Engine, VERSION, DEFAULT_SETTINGS, httpError };
+module.exports = { Engine, VERSION, MAINTENANCE, DEFAULT_SETTINGS, httpError };

@@ -285,7 +285,8 @@ async function render() {
   const v = $('#view');
   const fn = VIEWS[S.route] || VIEWS.home;
   const html = fn();
-  if (typeof html === 'string') { v.innerHTML = html; bindView(v); }
+  const notice = S.status && S.status.maintenance ? `<div class="note warn" style="margin-top:14px">${icon('warn')}<div><b>AutoPump is temporarily offline for maintenance.</b> Copy trading, automatic trades and scans are switched off — nothing will be bought or sold for you. You can still sell open positions yourself in Portfolio.</div></div>` : '';
+  if (typeof html === 'string') { v.innerHTML = notice + html; bindView(v); }
 }
 
 function bindView(root) {

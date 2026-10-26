@@ -18,7 +18,7 @@ class Discover {
     this.board = { status: 'idle', startedAt: null, finishedAt: null, progress: { done: 0, total: 0, step: '' }, coins: [], rows: [] };
     try { Object.assign(this.board, JSON.parse(fs.readFileSync(this.file, 'utf8')), { status: 'idle' }); } catch { /* first run */ }
     // With a fast RPC, keep the leaderboard fresh in the background (the free one is too slow for that).
-    this.autoTimer = setInterval(() => { if (this.fast && this.board.status !== 'scanning') this.scan(); }, 45 * 60e3);
+    this.autoTimer = setInterval(() => { if (this.fast && this.board.status !== 'scanning' && !this.engine.statusView().maintenance) this.scan(); }, 45 * 60e3);
     if (this.autoTimer.unref) this.autoTimer.unref();
   }
 
@@ -142,6 +142,7 @@ class Discover {
   leaderboard() { return this.board; }
 
   scan() {
+    if (this.engine.statusView().maintenance) { const e = new Error('AutoPump is temporarily offline for maintenance.'); e.status = 503; throw e; }
     if (this.board.status === 'scanning') return this.board;
     const big = this.fast;
     const plan = { coins: big ? 8 : 3, txPerCoin: big ? 80 : 25, wallets: big ? 55 : 12, txPerWallet: big ? 50 : 35 };
